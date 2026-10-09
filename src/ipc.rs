@@ -71,9 +71,9 @@ pub fn discover(runtime: &Path, include_host: bool) -> Vec<Client> {
 
 /// `discord-ipc-0` … `discord-ipc-9`, real sockets only.
 ///
-/// Symlinks are skipped: flatpak persists stub links into
-/// `.flatpak/<id>/xdg-run/` for granted paths, and following one would reach
-/// a client already found under its own ID.
+/// Flatpak leaves an empty regular file at `.flatpak/<id>/xdg-run/discord-ipc-N`
+/// in every app granted that path, so only the file type tells a stub from a
+/// client. Links are not followed.
 fn sockets_in(dir: &Path) -> Vec<PathBuf> {
     (0..10)
         .map(|n| dir.join(format!("discord-ipc-{n}")))
@@ -307,7 +307,7 @@ mod tests {
         let _a = UnixListener::bind(real.join("discord-ipc-0")).unwrap();
         let _b = UnixListener::bind(relay.join("discord-ipc-0")).unwrap();
         let _c = UnixListener::bind(rt.join("discord-ipc-0")).unwrap();
-        std::os::unix::fs::symlink(real.join("discord-ipc-0"), stub.join("discord-ipc-0")).unwrap();
+        fs::write(stub.join("discord-ipc-0"), "").unwrap();
 
         let found = discover(&rt, false);
         assert_eq!(

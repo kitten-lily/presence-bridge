@@ -31,11 +31,12 @@ flowchart LR
 - **Clients** are found generically: any app ID with a real socket at
   `.flatpak/<id>/xdg-run/discord-ipc-N` or `app/<id>/discord-ipc-N`, so no client
   list is needed. The `.flatpak/` socket is tried before the `app/` relay the Discord
-  flatpak's wrapper creates with `socat`. Symlinks are skipped, because flatpak
-  persists stub links into `.flatpak/<id>/xdg-run/` for granted paths. The canonical
-  `$XDG_RUNTIME_DIR/discord-ipc-N` is skipped unless `--include-host`: anything
-  listening there is native and detects games itself, so reporting to it would double
-  the activity.
+  flatpak's wrapper creates with `socat`. Only sockets count, checked without
+  following links: flatpak leaves an empty regular file at
+  `.flatpak/<id>/xdg-run/discord-ipc-N` in every app granted that path (Faugus,
+  Proton Mail, GitKraken, …). The canonical `$XDG_RUNTIME_DIR/discord-ipc-N` is
+  skipped unless `--include-host`: anything listening there is native and detects
+  games itself, so reporting to it would double the activity.
 - **Idle when no client runs.** Until a client socket exists the loop only probes for
   one: no `/proc` scan, and the game list is not fetched.
 - **Game list.** Discord's public detectable-applications endpoint, the list its own
@@ -95,7 +96,7 @@ thing to run when presence does not show up. As a service, install the binary to
 
 `cargo test --release --locked && cargo clippy --release --locked --all-targets -- -D warnings`
 
-The tests cover the matcher rules above, client discovery (relay ordering, symlink
+The tests cover the matcher rules above, client discovery (relay ordering, empty-file
 stubs, host-socket opt-in), and a session against an in-process fake server
 (handshake, a ping before the reply, the `SET_ACTIVITY` payload, EOF detection, a 4000
 handshake rejection).
