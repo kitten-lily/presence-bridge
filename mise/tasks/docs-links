@@ -36,6 +36,12 @@ done < <(git grep --untracked -I -noP '(?<![A-Za-z0-9._/-])docs/[A-Za-z0-9._/-]+
 
 echo "==> Checking markdown links..."
 while IFS=: read -r file line target; do
+    # A destination may be wrapped in <…> and followed by a title ("…" or '…').
+    # Unwrapped, it can't contain a space, so the first space ends it.
+    case "$target" in
+        '<'*) target="${target#<}" target="${target%%>*}" ;;
+        *) target="${target%% *}" ;;
+    esac
     case "$target" in
         http://* | https://* | mailto:* | '#'*) continue ;;
     esac

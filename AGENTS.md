@@ -138,14 +138,19 @@ place.
 
 **2. Skill file updates**
 
-- Areas touched: `git diff main...HEAD --stat -- src/ mise/ systemd/ docs/`.
-- Skill file changes: `git diff main...HEAD -- docs/skills/`.
+Compare against the PR's actual base, not `main`. A stacked PR's base is its parent
+branch, and diffing against `main` would count the parent's commits as this PR's.
+Use the fetched remote ref, since a local branch of that name may be stale or absent:
+`git fetch -q origin && base=origin/$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || echo main)`.
+
+- Areas touched: `git diff "$base"...HEAD --stat -- src/ mise/ systemd/ docs/`.
+- Skill file changes: `git diff "$base"...HEAD -- docs/skills/`.
 - For each touched area, confirm the matching skill file was updated, or that the
   change taught nothing new. Flag gaps, and note when no skill file covers the area.
 
 **3. Skill file commit timing**
 
-- `git log main..HEAD --oneline`.
+- `git log "$base"..HEAD --oneline`, with `$base` as in item 2.
 - Confirm each skill update is in the same commit as the change that produced it.
 - Cross-repo work: pass when the paired commits landed in the same session and one
   cites the other's full SHA (see *Cross-repo exception* above). The unavoidable

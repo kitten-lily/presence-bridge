@@ -86,6 +86,9 @@ The full procedure, with a real game and the Discord flatpak, is `README.md`
   `bash -c "exec -a 'C:\Program Files (x86)\Hearthstone\Hearthstone.exe' sleep 20"`
   is detected as Hearthstone, reported to the real client, and cleared when it exits.
   It shows on the real Discord profile for those 20 s.
-- **A client has to be running.** With no client socket the loop only probes for
-  one: no `/proc` scan, no fetch. A smoke run with Discord closed proves nothing, and
-  an empty cache dir stays empty.
+- **The service loop needs a running client; `--once` doesn't.** With no client
+  socket, the loop only probes for one: no `/proc` scan, no fetch, and an empty cache
+  dir stays empty. `--once` loads the list (fetching into an empty cache) and scans
+  without checking for a client. So it tests detection with Discord closed, but not
+  whether an activity reaches Discord. Checked 2026-10-09 against `main.rs`'s
+  `opts.once` branch and with an empty `XDG_CACHE_HOME`.
