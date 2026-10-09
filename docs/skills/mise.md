@@ -62,7 +62,9 @@ corrected where mise 2026.10.3 behaves differently.
   already in the file for other platforms stay. To drop them, delete the file and relock.
 - **Any mise command that resolves tools can rewrite it in passing**, so the working
   tree heals and the committed copy doesn't. `--check` therefore compares against
-  **git**, and also fails while `mise.lock` is untracked.
+  **`HEAD`**, not the index: `git diff -- mise.lock` alone passes once a stale lock's
+  refresh is merely staged. It also fails when `HEAD` has no `mise.lock` at all.
+  Greptile caught the index version on #9, and krytis's task has the same gap.
 - **The recorded checksum and URL depend on which mise binary wrote the lock**, not
   only on the pinned version: mise releases have switched build variants (`musl` ↔
   `gnu`) for the same tool version. If `--check` fails in CI but passes locally, update
@@ -95,7 +97,9 @@ Ported from krytis [§ Creating a new task](https://github.com/starlit-os/krytis
 - **`usage lint` only recognises a file as a script when it has `#USAGE` lines**
   *(here)*. On a task without any, it parses the whole file as a KDL spec and reports
   `Found invalid node name` at the shebang. A task with no flags has no spec to lint, so
-  `mise/tasks/lint` checks only files that contain `#USAGE`.
+  `mise/tasks/lint` checks only files that contain `#USAGE`. It walks `mise/tasks`
+  recursively, because grouped tasks live in subdirectories, and a `grep` on a
+  directory fails in a way `if grep -q` reads as "no spec".
 - **Parsed flags arrive as `$usage_<name>`** (hyphens become underscores); the raw
   arguments stay in `$@`. `mise/tasks/dev` rebuilds the binary's command line from
   `usage_*`.

@@ -13,6 +13,7 @@ rust = { version = "1.98.1", components = "clippy,rustfmt" }
 usage = "6.12.1"
 
 [settings]
-# mise.lock is committed. Lockfiles are never created implicitly:
-# `mise run mise-lock` writes it.
+# mise.lock is committed. `mise install` can create it implicitly, with whatever
+# it resolved; regenerate it with `mise run mise-lock` before committing.
+# docs/skills/mise.md § mise.lock.
 lockfile = true

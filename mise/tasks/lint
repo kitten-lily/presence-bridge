@@ -17,9 +17,15 @@ cargo clippy --release --locked --all-targets -- -D warnings
 # `usage lint` reads a file as a script only when it carries #USAGE lines;
 # otherwise it parses the whole file, shebang included, as a KDL spec and fails
 # on line 1. A task with no flags has no spec to check.
-# docs/skills/mise.md § Creating a task.
-for task in mise/tasks/*; do
-    if grep -q '^#USAGE' "$task"; then
-        usage lint --warnings-as-errors "$task"
-    fi
-done
+# docs/skills/mise.md § Creating a task. Tasks may be grouped one level or more
+# down (mise/tasks/<group>/<name>), so walk files, not entries; a file grep can't
+# read is an error, not a task without a spec.
+while IFS= read -r -d '' task; do
+    rc=0
+    grep -q '^#USAGE' "$task" || rc=$?
+    case "$rc" in
+        0) usage lint --warnings-as-errors "$task" ;;
+        1) ;;
+        *) echo "lint: cannot read $task" >&2; exit 1 ;;
+    esac
+done < <(find mise/tasks -type f -print0 | sort -z)

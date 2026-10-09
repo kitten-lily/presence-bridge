@@ -24,9 +24,11 @@ echo "==> Locking tools for ${PLATFORM}..."
 mise lock --platform "$PLATFORM"
 
 if [[ "$CHECK" -eq 1 ]]; then
-    if ! git diff --quiet -- mise.lock || ! git ls-files --error-unmatch mise.lock >/dev/null 2>&1; then
+    # Against HEAD, not the index: a refreshed lock that is only staged, or
+    # staged but never committed, is still behind what git has.
+    if ! git cat-file -e HEAD:mise.lock 2>/dev/null || ! git diff --quiet HEAD -- mise.lock; then
         echo "==> The committed mise.lock does not match mise.toml:" >&2
-        git --no-pager diff -- mise.lock >&2
+        git --no-pager diff HEAD -- mise.lock >&2
         echo "==> Commit the refreshed mise.lock (already written above)." >&2
         exit 1
     fi
