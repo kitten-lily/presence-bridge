@@ -15,6 +15,12 @@ file is what they don't say.
   Proton-CachyOS. Seen on 2026-10-09: `WoW.exe -launcherlogin -uid wow` and
   `Hearthstone.exe -launch -uid hs_beta`. Both matched their detectable entries
   (`_retail_/wow.exe`, `hearthstone.exe`) with no arguments rule.
+- **Steam's Proton puts the game on drive `S:`, not `C:`.** Steam (flatpak) with
+  Proton-CachyOS ran Valheim as `S:\common\Valheim\valheim.exe` (2026-10-09): `S:`
+  is `steamapps/`. Matching is by path suffix, so the drive letter doesn't matter
+  (`valheim/valheim.exe` matched), but don't key anything on `C:\`. Its siblings
+  `c:\windows\system32\steam.exe` (which carries the Unix path as an argument) and
+  `UnityCrashHandler64.exe` matched nothing.
 - **Steam flatpak games are visible in host `/proc`, with their host path as
   argv0.** Neither the flatpak nor pressure-vessel (`SteamLinuxRuntime_soldier`)
   hides them from the host. Seen on 2026-10-09: Valheim's native build ran as
@@ -25,7 +31,8 @@ file is what they don't say.
   showed nothing (the game doesn't use RPC either). Before expecting a native title
   to show, check its entry:
   `jq '.[] | select(.name | test("<title>"; "i"))' ~/.cache/presence-bridge/detectable.json`.
-  User-supplied aliases for this gap: #7.
+  Forcing Proton for the title in Steam makes it match the `win32` entry: Valheim
+  then showed as "Playing Valheim". User-supplied aliases for the native build: #7.
 
 ## The detectable list
 
