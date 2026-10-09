@@ -2,3 +2,114 @@
 
 Discord Rich Presence for games that a sandboxed (flatpak) Discord client cannot
 detect.
+
+A flatpak Discord — or Vesktop, Equibop, Legcord — runs in its own PID namespace.
+Its process-scan game detection sees the ~20 processes inside its sandbox, not the
+hundreds on the host, so a game started from another flatpak (Faugus, Heroic, Steam,
+Lutris, Bottles) is invisible to it. Flatpak has no option to share the host PID
+namespace (`--share` accepts only `network` and `ipc`). Games that speak Discord RPC
+themselves can still reach the client; games that rely on detection alone — World of
+Warcraft holds no Discord socket at all — show nothing.
+
+presence-bridge is a user service on the host that does the detection for the client:
+it scans `/proc`, matches games against Discord's own detectable-games list, and
+reports each one over the client's IPC socket as if the game had done it.
+
+Background: [starlit-os/krytis#595](https://github.com/starlit-os/krytis/issues/595).
+
+## How it works
+
+```mermaid
+flowchart LR
+  P["/proc (host PID ns)"] -->|argv0 + args, every 5 s| M[matcher]
+  D["discord.com/api/v9/applications/detectable<br/>(cached 24 h)"] --> M
+  M -->|app id, pid, start time| S[sessions]
+  R["$XDG_RUNTIME_DIR/.flatpak/*/xdg-run/discord-ipc-N<br/>$XDG_RUNTIME_DIR/app/*/discord-ipc-N"] --> S
+  S -->|"handshake client_id=app id<br/>SET_ACTIVITY {timestamps.start}"| C[flatpak Discord / Vesktop / Equibop …]
+```
+
+- **Clients** are found generically: any app ID with a real socket at
+  `.flatpak/<id>/xdg-run/discord-ipc-N` or `app/<id>/discord-ipc-N`, so no client
+  list is needed. The `.flatpak/` socket is tried before the `app/` relay the Discord
+  flatpak's wrapper creates with `socat`. Symlinks are skipped, because flatpak
+  persists stub links into `.flatpak/<id>/xdg-run/` for granted paths. The canonical
+  `$XDG_RUNTIME_DIR/discord-ipc-N` is skipped unless `--include-host`: anything
+  listening there is native and detects games itself, so reporting to it would double
+  the activity.
+- **Idle when no client runs.** Until a client socket exists the loop only probes for
+  one: no `/proc` scan, and the game list is not fetched.
+- **Game list.** Discord's public detectable-applications endpoint, the list its own
+  client and arRPC use. The response is ~13 MB / ~24.6k apps; only win32 and linux
+  non-launcher executables are kept, leaving ~10.5k apps in a 1.3 MB cache under
+  `$CACHE_DIRECTORY` (systemd) or `$XDG_CACHE_HOME/presence-bridge/`. It is refetched
+  when older than 24 h, and a stale cache is used when offline.
+- **Matching** copies [arRPC](https://github.com/OpenAsar/arrpc)'s
+  `src/process/index.js` rules, so a title is detected exactly when Vesktop/Equibop's
+  built-in detection would detect it: lowercase, `\` → `/`, compare every path suffix
+  (and the `64`/`x64`/`_64`-stripped variants) against executable names; `>name` must
+  equal the basename; `arguments` must appear in the joined argv. It reads **argv0
+  from `/proc/<pid>/cmdline`**, not `/proc/<pid>/exe`: Wine and Proton set argv0 to the
+  Windows path (`C:\Program Files (x86)\World of Warcraft\_retail_\WoW.exe`), while
+  `exe` names only the wine preloader. One deliberate difference: arRPC produces no
+  candidate for a bare argv0 with no `/`; here the basename is always a candidate.
+- **Sessions.** One IPC connection per (game, client), because the handshake binds a
+  connection to one `client_id`. The game's application ID is the `client_id`, so the
+  client renders the game's own name and icon; the activity carries only
+  `timestamps.start`, taken from the process start time in `/proc/<pid>/stat`, so
+  elapsed time is right when the bridge starts after the game. The lowest matching
+  PID stands for a title. When the game exits the bridge sends `activity: null` and
+  closes. When a client disappears or its socket hits EOF, the session is dropped and
+  retried on the next scan.
+
+Synchronous std I/O, no async runtime; dependencies are `serde`, `serde_json`, and
+`ureq` (rustls) for the one HTTPS fetch.
+
+## Usage
+
+```console
+$ cargo build --release --locked
+$ target/release/presence-bridge --help
+usage: presence-bridge [--once] [--interval SECS] [--include-host] [--db FILE]
+```
+
+`--once` scans once and prints the detected games and reachable clients — the first
+thing to run when presence does not show up. As a service, install the binary to
+`/usr/bin` and `systemd/presence-bridge.service` to `/usr/lib/systemd/user/`, then
+`systemctl --user enable --now presence-bridge`.
+
+## Known limitations
+
+- **RPC-capable games may show twice.** A game that already reports through Proton's
+  `rpc-bridge` and is also on the detectable list gets a second connection from the
+  bridge. Attributing a Discord socket to a game is not cheap — the connection is held
+  by `bridge.exe` in the Wine prefix, not by the game — so this is unhandled. Whether
+  Discord merges two activities with the same application ID is untested.
+- **`pid` is a host PID the client cannot see.** `SET_ACTIVITY` requires a `pid`; the
+  bridge sends the game's host PID. arRPC ignores it. What the official client does
+  with a PID absent from its namespace is untested.
+- **Native Linux titles are barely covered**: the detectable list carries 8 linux
+  executables against ~11k win32 ones (counted 2026-10-09). That is also all a native
+  Discord detects, so this is not a gap against it.
+
+## Testing
+
+`cargo test --release --locked && cargo clippy --release --locked --all-targets -- -D warnings`
+
+The tests cover the matcher rules above, client discovery (relay ordering, symlink
+stubs, host-socket opt-in), and a session against an in-process fake server
+(handshake, a ping before the reply, the `SET_ACTIVITY` payload, EOF detection, a 4000
+handshake rejection).
+
+Live check, World of Warcraft under Faugus with the Discord flatpak:
+
+1. Start `com.discordapp.Discord` and log in, with activity sharing enabled under
+   Settings → Activity Privacy.
+2. `presence-bridge --once` lists
+   `client com.discordapp.Discord: …/.flatpak/com.discordapp.Discord/xdg-run/discord-ipc-0`.
+3. Launch WoW from Faugus. `--once` lists
+   `game World of Warcraft (356875762940379136) pid …`.
+4. Run `presence-bridge` and look for
+   `World of Warcraft (pid …): reported to com.discordapp.Discord via …`; the Discord
+   profile shows "Playing World of Warcraft" with the time since WoW started.
+5. Quit WoW: the log says `game exited, cleared`, and the activity disappears within
+   one scan interval.

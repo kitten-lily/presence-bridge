@@ -1,0 +1,371 @@
+//! Discord IPC: finding sandboxed clients' sockets and talking to them.
+//!
+//! Wire format: `u32 op` + `u32 len` (little-endian) + `len` bytes of JSON.
+//! One connection is bound to one application ID by its handshake, so each
+//! (game, client) pair gets its own [`Session`]. Discord clears the activity
+//! when that connection closes, which is how a game exit is reported.
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::io::{self, Read, Write};
+use std::os::unix::fs::FileTypeExt;
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use serde_json::{Value, json};
+
+const OP_HANDSHAKE: u32 = 0;
+const OP_FRAME: u32 = 1;
+const OP_CLOSE: u32 = 2;
+const OP_PING: u32 = 3;
+const OP_PONG: u32 = 4;
+
+/// Discord's own client caps a frame well below this; a larger length means
+/// the stream is out of sync, not a big message.
+const MAX_FRAME: usize = 1 << 20;
+const TIMEOUT: Duration = Duration::from_secs(3);
+
+/// A Discord client reachable from the host, keyed by its flatpak app ID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Client {
+    pub key: String,
+    /// Candidate sockets, best first. A flatpak Discord has two: its real
+    /// socket under `.flatpak/<id>/xdg-run/` and the `socat` relay its wrapper
+    /// puts in `app/<id>/`.
+    pub paths: Vec<PathBuf>,
+}
+
+/// Every Discord-ish IPC socket a sandbox exposes on the host.
+///
+/// Probes the per-app locations Proton's `rpc-bridge` probes, generalised to
+/// any app ID so Discord, Vesktop, Equibop, Legcord, … all work without a list.
+///
+/// The canonical `$XDG_RUNTIME_DIR/discord-ipc-N` is skipped unless
+/// `include_host`: a client listening there runs in the host PID namespace and
+/// detects games itself, so reporting to it would double the activity.
+pub fn discover(runtime: &Path, include_host: bool) -> Vec<Client> {
+    let mut found: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+    for (dir, sub) in [(".flatpak", Some("xdg-run")), ("app", None)] {
+        let Ok(entries) = fs::read_dir(runtime.join(dir)) else { continue };
+        for ent in entries.filter_map(Result::ok) {
+            let Some(id) = ent.file_name().to_str().map(str::to_owned) else { continue };
+            let base = match sub {
+                Some(s) => ent.path().join(s),
+                None => ent.path(),
+            };
+            let socks = sockets_in(&base);
+            if !socks.is_empty() {
+                found.entry(id).or_default().extend(socks);
+            }
+        }
+    }
+    if include_host {
+        let socks = sockets_in(runtime);
+        if !socks.is_empty() {
+            found.insert("host".into(), socks);
+        }
+    }
+    found.into_iter().map(|(key, paths)| Client { key, paths }).collect()
+}
+
+/// `discord-ipc-0` … `discord-ipc-9`, real sockets only.
+///
+/// Symlinks are skipped: flatpak persists stub links into
+/// `.flatpak/<id>/xdg-run/` for granted paths, and following one would reach
+/// a client already found under its own ID.
+fn sockets_in(dir: &Path) -> Vec<PathBuf> {
+    (0..10)
+        .map(|n| dir.join(format!("discord-ipc-{n}")))
+        .filter(|p| fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_socket()))
+        .collect()
+}
+
+#[derive(Debug)]
+pub enum Error {
+    Io(io::Error),
+    /// The client answered the handshake with CLOSE (e.g. 4000 invalid client_id).
+    Rejected(Value),
+    Protocol(String),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Io(e) => write!(f, "{e}"),
+            Error::Rejected(v) => write!(f, "rejected: {v}"),
+            Error::Protocol(s) => write!(f, "protocol: {s}"),
+        }
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Error {
+        Error::Io(e)
+    }
+}
+
+pub struct Session {
+    stream: UnixStream,
+    buf: Vec<u8>,
+    nonce: u64,
+    pub path: PathBuf,
+    /// The game process the current activity describes.
+    pub pid: u32,
+}
+
+impl Session {
+    /// Connect to the first live socket of `client` and handshake as `app_id`.
+    pub fn open(client: &Client, app_id: &str) -> Result<Session, Error> {
+        let mut last = Error::Protocol("no socket".into());
+        for path in &client.paths {
+            match Session::open_path(path, app_id) {
+                Ok(s) => return Ok(s),
+                Err(e @ Error::Rejected(_)) => return Err(e),
+                Err(e) => last = e,
+            }
+        }
+        Err(last)
+    }
+
+    fn open_path(path: &Path, app_id: &str) -> Result<Session, Error> {
+        let stream = UnixStream::connect(path)?;
+        stream.set_read_timeout(Some(TIMEOUT))?;
+        stream.set_write_timeout(Some(TIMEOUT))?;
+        let mut s = Session { stream, buf: Vec::new(), nonce: 0, path: path.to_owned(), pid: 0 };
+        s.send(OP_HANDSHAKE, &json!({ "v": 1, "client_id": app_id }))?;
+        let (op, msg) = s.recv_blocking()?;
+        match op {
+            OP_FRAME if msg["evt"] == "READY" => Ok(s),
+            OP_CLOSE => Err(Error::Rejected(msg)),
+            _ => Err(Error::Protocol(format!("unexpected handshake reply op={op} {msg}"))),
+        }
+    }
+
+    /// Set (or with `None`, clear) the activity and wait for Discord's reply.
+    ///
+    /// The activity carries only a start time: the client fills in the game's
+    /// name and icon from the application ID bound by the handshake.
+    pub fn set_activity(&mut self, pid: u32, start_ms: Option<u64>, clear: bool) -> Result<(), Error> {
+        self.nonce += 1;
+        let nonce = self.nonce.to_string();
+        let activity = if clear {
+            Value::Null
+        } else {
+            match start_ms {
+                Some(ms) => json!({ "timestamps": { "start": ms } }),
+                None => json!({}),
+            }
+        };
+        self.send(
+            OP_FRAME,
+            &json!({ "cmd": "SET_ACTIVITY", "args": { "pid": pid, "activity": activity }, "nonce": nonce }),
+        )?;
+        let deadline = Instant::now() + TIMEOUT;
+        loop {
+            let (op, msg) = self.recv_blocking()?;
+            match op {
+                OP_FRAME if msg["nonce"] == nonce.as_str() => {
+                    if msg["evt"] == "ERROR" {
+                        return Err(Error::Rejected(msg["data"].clone()));
+                    }
+                    self.pid = pid;
+                    return Ok(());
+                }
+                OP_CLOSE => return Err(Error::Rejected(msg)),
+                _ if Instant::now() >= deadline => {
+                    return Err(Error::Protocol("no SET_ACTIVITY reply".into()));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Between scans: answer pings, discard unsolicited frames, and report
+    /// whether the client is still there. Never blocks.
+    pub fn pump(&mut self) -> Result<(), Error> {
+        self.stream.set_nonblocking(true)?;
+        let res = self.fill_available();
+        self.stream.set_nonblocking(false)?;
+        res?;
+        while let Some((op, msg)) = self.take_frame()? {
+            self.handle_unsolicited(op, msg)?;
+        }
+        Ok(())
+    }
+
+    fn fill_available(&mut self) -> Result<(), Error> {
+        let mut chunk = [0u8; 4096];
+        loop {
+            match self.stream.read(&mut chunk) {
+                Ok(0) => return Err(Error::Io(io::ErrorKind::UnexpectedEof.into())),
+                Ok(n) => self.buf.extend_from_slice(&chunk[..n]),
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
+
+    fn handle_unsolicited(&mut self, op: u32, msg: Value) -> Result<(), Error> {
+        match op {
+            OP_PING => self.send(OP_PONG, &msg),
+            OP_CLOSE => Err(Error::Rejected(msg)),
+            _ => Ok(()),
+        }
+    }
+
+    /// Next frame, waiting up to the socket timeout. Pings are answered here
+    /// too, so a ping arriving mid-request is not mistaken for the reply.
+    fn recv_blocking(&mut self) -> Result<(u32, Value), Error> {
+        loop {
+            if let Some((op, msg)) = self.take_frame()? {
+                if op == OP_PING {
+                    self.send(OP_PONG, &msg)?;
+                    continue;
+                }
+                return Ok((op, msg));
+            }
+            let mut chunk = [0u8; 4096];
+            match self.stream.read(&mut chunk) {
+                Ok(0) => return Err(Error::Io(io::ErrorKind::UnexpectedEof.into())),
+                Ok(n) => self.buf.extend_from_slice(&chunk[..n]),
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
+
+    fn take_frame(&mut self) -> Result<Option<(u32, Value)>, Error> {
+        if self.buf.len() < 8 {
+            return Ok(None);
+        }
+        let op = u32::from_le_bytes(self.buf[0..4].try_into().unwrap());
+        let len = u32::from_le_bytes(self.buf[4..8].try_into().unwrap()) as usize;
+        if len > MAX_FRAME {
+            return Err(Error::Protocol(format!("frame length {len}")));
+        }
+        if self.buf.len() < 8 + len {
+            return Ok(None);
+        }
+        let msg = serde_json::from_slice(&self.buf[8..8 + len])
+            .map_err(|e| Error::Protocol(format!("bad JSON: {e}")))?;
+        self.buf.drain(..8 + len);
+        Ok(Some((op, msg)))
+    }
+
+    fn send(&mut self, op: u32, msg: &Value) -> Result<(), Error> {
+        let body = serde_json::to_vec(msg).map_err(|e| Error::Protocol(e.to_string()))?;
+        let mut frame = Vec::with_capacity(8 + body.len());
+        frame.extend_from_slice(&op.to_le_bytes());
+        frame.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        frame.extend_from_slice(&body);
+        self.stream.write_all(&frame)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::net::UnixListener;
+    use std::thread;
+
+    fn tempdir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("presence-bridge-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn read_frame(s: &mut UnixStream) -> Option<(u32, Value)> {
+        let mut hdr = [0u8; 8];
+        s.read_exact(&mut hdr).ok()?;
+        let op = u32::from_le_bytes(hdr[0..4].try_into().unwrap());
+        let len = u32::from_le_bytes(hdr[4..8].try_into().unwrap()) as usize;
+        let mut body = vec![0u8; len];
+        s.read_exact(&mut body).ok()?;
+        Some((op, serde_json::from_slice(&body).unwrap()))
+    }
+
+    fn write_frame(s: &mut UnixStream, op: u32, v: &Value) {
+        let body = serde_json::to_vec(v).unwrap();
+        s.write_all(&op.to_le_bytes()).unwrap();
+        s.write_all(&(body.len() as u32).to_le_bytes()).unwrap();
+        s.write_all(&body).unwrap();
+    }
+
+    #[test]
+    fn discover_keys_by_app_and_prefers_real_socket_over_relay() {
+        let rt = tempdir("discover");
+        let real = rt.join(".flatpak/com.discordapp.Discord/xdg-run");
+        let relay = rt.join("app/com.discordapp.Discord");
+        let stub = rt.join(".flatpak/io.github.Faugus.faugus-launcher/xdg-run");
+        for d in [&real, &relay, &stub] {
+            fs::create_dir_all(d).unwrap();
+        }
+        let _a = UnixListener::bind(real.join("discord-ipc-0")).unwrap();
+        let _b = UnixListener::bind(relay.join("discord-ipc-0")).unwrap();
+        let _c = UnixListener::bind(rt.join("discord-ipc-0")).unwrap();
+        std::os::unix::fs::symlink(real.join("discord-ipc-0"), stub.join("discord-ipc-0")).unwrap();
+
+        let found = discover(&rt, false);
+        assert_eq!(
+            found,
+            [Client {
+                key: "com.discordapp.Discord".into(),
+                paths: vec![real.join("discord-ipc-0"), relay.join("discord-ipc-0")],
+            }]
+        );
+        assert!(discover(&rt, true).iter().any(|c| c.key == "host"));
+        fs::remove_dir_all(rt).unwrap();
+    }
+
+    #[test]
+    fn session_handshakes_sets_activity_and_sees_disconnect() {
+        let rt = tempdir("session");
+        let sock = rt.join("discord-ipc-0");
+        let listener = UnixListener::bind(&sock).unwrap();
+        let server = thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let (op, hs) = read_frame(&mut s).unwrap();
+            assert_eq!((op, hs["client_id"].as_str()), (OP_HANDSHAKE, Some("356875762940379136")));
+            write_frame(&mut s, OP_FRAME, &json!({ "cmd": "DISPATCH", "evt": "READY", "data": {} }));
+            // A ping before the reply must be answered, not taken as the reply.
+            write_frame(&mut s, OP_PING, &json!({ "x": 1 }));
+            let (op, req) = read_frame(&mut s).unwrap();
+            assert_eq!(op, OP_FRAME);
+            assert_eq!(req["args"]["activity"]["timestamps"]["start"], 1234);
+            assert_eq!(req["args"]["pid"], 42);
+            let (op, pong) = read_frame(&mut s).unwrap();
+            assert_eq!((op, pong), (OP_PONG, json!({ "x": 1 })));
+            write_frame(&mut s, OP_FRAME, &json!({ "cmd": "SET_ACTIVITY", "evt": null, "nonce": req["nonce"], "data": {} }));
+            // Dropping `s` closes the connection, as a quitting Discord would.
+        });
+
+        let client = Client { key: "test".into(), paths: vec![sock] };
+        let mut s = Session::open(&client, "356875762940379136").unwrap();
+        s.set_activity(42, Some(1234), false).unwrap();
+        assert_eq!(s.pid, 42);
+        server.join().unwrap();
+        thread::sleep(Duration::from_millis(50));
+        assert!(s.pump().is_err());
+        fs::remove_dir_all(rt).unwrap();
+    }
+
+    #[test]
+    fn handshake_close_is_a_rejection() {
+        let rt = tempdir("reject");
+        let sock = rt.join("discord-ipc-0");
+        let listener = UnixListener::bind(&sock).unwrap();
+        let server = thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            read_frame(&mut s).unwrap();
+            write_frame(&mut s, OP_CLOSE, &json!({ "code": 4000, "message": "Invalid Client ID" }));
+        });
+        let client = Client { key: "test".into(), paths: vec![sock] };
+        assert!(matches!(Session::open(&client, "0"), Err(Error::Rejected(v)) if v["code"] == 4000));
+        server.join().unwrap();
+        fs::remove_dir_all(rt).unwrap();
+    }
+}

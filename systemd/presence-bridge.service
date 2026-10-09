@@ -1,0 +1,16 @@
+[Unit]
+Description=Discord Rich Presence for games sandboxed Discord clients cannot detect
+Documentation=https://github.com/kitten-lily/presence-bridge
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/presence-bridge
+# $CACHE_DIRECTORY → ~/.cache/presence-bridge, holding the trimmed detectable list.
+CacheDirectory=presence-bridge
+Restart=on-failure
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=graphical-session.target
