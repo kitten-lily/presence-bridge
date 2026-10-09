@@ -24,12 +24,16 @@ const OP_PONG: u32 = 4;
 /// Discord's own client caps a frame well below this; a larger length means
 /// the stream is out of sync, not a big message.
 const MAX_FRAME: usize = 1 << 20;
-/// Time a handshake or `SET_ACTIVITY` gets for its reply, end to end. Pings
-/// and trickled bytes do not extend it.
+/// Time a handshake or `SET_ACTIVITY` gets, end to end: sending the request,
+/// answering pings, and reading the reply. Neither pings nor a peer that
+/// trickles bytes in or drains them out slowly extend it.
 const TIMEOUT: Duration = Duration::from_secs(3);
 /// Bytes one [`Session::pump`] reads: a peer that never stops sending gets
 /// one maximal frame's worth per scan instead of holding the loop.
 const PUMP_BUDGET: usize = MAX_FRAME + 8;
+/// Largest single `write` in [`Session::send`]: see its doc for why sends are
+/// chunked.
+const WRITE_CHUNK: usize = 4096;
 
 /// A Discord client reachable from the host, keyed by its flatpak app ID.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,10 +139,10 @@ impl Session {
 
     fn open_path(path: &Path, app_id: &str) -> Result<Session, Error> {
         let stream = UnixStream::connect(path)?;
-        stream.set_write_timeout(Some(TIMEOUT))?;
         let mut s = Session { stream, buf: Vec::new(), nonce: 0, path: path.to_owned(), pid: 0 };
-        s.send(OP_HANDSHAKE, &json!({ "v": 1, "client_id": app_id }))?;
-        let (op, msg) = s.recv_blocking(Instant::now() + TIMEOUT)?;
+        let deadline = Instant::now() + TIMEOUT;
+        s.send(OP_HANDSHAKE, &json!({ "v": 1, "client_id": app_id }), deadline)?;
+        let (op, msg) = s.recv_blocking(deadline)?;
         match op {
             OP_FRAME if msg["evt"] == "READY" => Ok(s),
             OP_CLOSE => Err(Error::Rejected(msg)),
@@ -161,11 +165,12 @@ impl Session {
                 None => json!({}),
             }
         };
+        let deadline = Instant::now() + TIMEOUT;
         self.send(
             OP_FRAME,
             &json!({ "cmd": "SET_ACTIVITY", "args": { "pid": pid, "activity": activity }, "nonce": nonce }),
+            deadline,
         )?;
-        let deadline = Instant::now() + TIMEOUT;
         loop {
             let (op, msg) = self.recv_blocking(deadline)?;
             match op {
@@ -220,7 +225,9 @@ impl Session {
 
     fn handle_unsolicited(&mut self, op: u32, msg: Value) -> Result<(), Error> {
         match op {
-            OP_PING => self.send(OP_PONG, &msg),
+            // Called with the socket non-blocking, so a peer that isn't reading
+            // fails this at once rather than after TIMEOUT.
+            OP_PING => self.send(OP_PONG, &msg, Instant::now() + TIMEOUT),
             OP_CLOSE => Err(Error::Rejected(msg)),
             _ => Ok(()),
         }
@@ -233,14 +240,14 @@ impl Session {
         loop {
             if let Some((op, msg)) = self.take_frame()? {
                 if op == OP_PING {
-                    self.send(OP_PONG, &msg)?;
+                    self.send(OP_PONG, &msg, deadline)?;
                     continue;
                 }
                 return Ok((op, msg));
             }
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
-                return Err(Error::Io(io::ErrorKind::TimedOut.into()));
+                return Err(timed_out());
             }
             self.stream.set_read_timeout(Some(left))?;
             let mut chunk = [0u8; 4096];
@@ -250,7 +257,7 @@ impl Session {
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
                 // An expired read timeout is EAGAIN on Linux, not ETIMEDOUT.
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    return Err(Error::Io(io::ErrorKind::TimedOut.into()));
+                    return Err(timed_out());
                 }
                 Err(e) => return Err(e.into()),
             }
@@ -275,15 +282,43 @@ impl Session {
         Ok(Some((op, msg)))
     }
 
-    fn send(&mut self, op: u32, msg: &Value) -> Result<(), Error> {
+    /// Write one frame, or time out once `deadline` passes. A pong echoes the
+    /// ping, so a near-`MAX_FRAME` ping yields a pong the socket can't hold, and
+    /// the peer decides how fast it drains.
+    ///
+    /// Linux applies a Unix socket's `SO_SNDTIMEO` per internal buffer
+    /// allocation, not per `write`, so one large `write` blocks for as long as
+    /// a slow reader keeps freeing buffers. Writing at most [`WRITE_CHUNK`]
+    /// bytes per call, with the timeout re-armed to the time remaining, keeps
+    /// each call short enough for the deadline check between them to bind.
+    fn send(&mut self, op: u32, msg: &Value, deadline: Instant) -> Result<(), Error> {
         let body = serde_json::to_vec(msg).map_err(|e| Error::Protocol(e.to_string()))?;
         let mut frame = Vec::with_capacity(8 + body.len());
         frame.extend_from_slice(&op.to_le_bytes());
         frame.extend_from_slice(&(body.len() as u32).to_le_bytes());
         frame.extend_from_slice(&body);
-        self.stream.write_all(&frame)?;
+        let mut rest = &frame[..];
+        while !rest.is_empty() {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(timed_out());
+            }
+            self.stream.set_write_timeout(Some(left))?;
+            match self.stream.write(&rest[..rest.len().min(WRITE_CHUNK)]) {
+                Ok(0) => return Err(Error::Io(io::ErrorKind::WriteZero.into())),
+                Ok(n) => rest = &rest[n..],
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                // An expired write timeout is EAGAIN on Linux, like reads.
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Err(timed_out()),
+                Err(e) => return Err(e.into()),
+            }
+        }
         Ok(())
     }
+}
+
+fn timed_out() -> Error {
+    Error::Io(io::ErrorKind::TimedOut.into())
 }
 
 #[cfg(test)]
@@ -417,6 +452,30 @@ mod tests {
                     return;
                 }
                 thread::sleep(Duration::from_millis(100));
+            }
+        });
+        let client = Client { key: "test".into(), paths: vec![sock] };
+        let res = within(TIMEOUT * 3, move || Session::open(&client, "1").map(|_| ()));
+        assert!(matches!(res, Err(Error::Io(e)) if e.kind() == io::ErrorKind::TimedOut));
+        fs::remove_dir_all(rt).unwrap();
+    }
+
+    #[test]
+    fn a_slow_reader_does_not_extend_the_deadline_through_pong_writes() {
+        let rt = tempdir("slow-reader");
+        let sock = rt.join("discord-ipc-0");
+        let listener = UnixListener::bind(&sock).unwrap();
+        thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            read_frame(&mut s).unwrap();
+            // One ping near MAX_FRAME, far larger than the socket buffer: the pong
+            // echoes it, so writing it blocks until this side reads. Reading
+            // 16 KiB every 200 ms keeps each write() making progress, so a
+            // per-call write timeout never fires; only a deadline stops it.
+            write_frame(&mut s, OP_PING, &json!({ "pad": "x".repeat(1000 * 1024) }));
+            let mut chunk = [0u8; 16 * 1024];
+            while s.read(&mut chunk).is_ok_and(|n| n > 0) {
+                thread::sleep(Duration::from_millis(200));
             }
         });
         let client = Client { key: "test".into(), paths: vec![sock] };

@@ -62,9 +62,10 @@ flowchart LR
   PID stands for a title. When the game exits the bridge sends `activity: null` and
   closes. When a client disappears or its socket hits EOF, the session is dropped and
   retried on the next scan. Anything can listen on a discovered socket, so a peer
-  cannot hold the loop: the handshake and each `SET_ACTIVITY` get 3 s end to end
-  (pings and trickled bytes do not extend it), and between scans a session reads at
-  most one maximal frame (1 MiB) of whatever the peer sends.
+  cannot hold the loop: the handshake and each `SET_ACTIVITY` get 3 s end to end,
+  writes included (pings, and bytes trickled in or drained out slowly, do not extend
+  it), and between scans a session reads at most one maximal frame (1 MiB) of
+  whatever the peer sends.
 
 Synchronous std I/O, no async runtime: one loop, plus a worker thread for the list
 refresh. Dependencies are `serde`, `serde_json`, and `ureq` (rustls) for the one
@@ -105,7 +106,7 @@ The tests cover the matcher rules above, client discovery (relay ordering, empty
 stubs, host-socket opt-in), and a session against an in-process fake server
 (handshake, a ping before the reply, the `SET_ACTIVITY` payload, EOF detection, a 4000
 handshake rejection, a ping flood that never sends `READY`, a peer that never stops
-sending).
+sending, a peer that drains a near-1 MiB pong slowly).
 
 Live check, World of Warcraft under Faugus with the Discord flatpak:
 
