@@ -32,6 +32,12 @@ parent's branch is deleted, and this repo doesn't delete merged branches
 (`delete_branch_on_merge: false`, as of 2026-10-09). So retarget it yourself:
 `gh pr edit <child> --base main`.
 
+When the fix lands on the parent and the skill file exists only on the child,
+the same-commit rule can't be met. Write the lesson on the child, in a commit that
+cites the fix's full SHA, as for cross-repo pairs (AGENTS.md § The
+Self-Improvement Loop). Done for kitten-lily/presence-bridge@514c828 on #3, whose
+lesson is in `ipc.md` on #6.
+
 ## Review: Greptile
 
 Greptile reviews PRs here. Its findings arrive as inline review comments with P1/P2

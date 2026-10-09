@@ -47,18 +47,30 @@ This file covers what a host-side client of those sockets needs to know.
   `xdg-run/discord-ipc-N`, so whatever answers may not be Discord. Nothing a peer
   sends may hold the loop or grow memory without bound:
   - The handshake and each `SET_ACTIVITY` get one end-to-end deadline (`TIMEOUT`,
-    3 s) passed into `recv_blocking`. Pings are answered there, and neither pings nor
-    trickled bytes extend it; the read timeout is set to the time remaining before
-    each read. A per-call deadline checked only after `recv_blocking` returns never
-    fires against a peer that keeps pinging. Greptile found this on #3; a peer pinging
-    every 100 ms held `Session::open` past 10 s.
+    3 s), passed into both `send` and `recv_blocking`. Pings are answered inside
+    that, and neither pings nor trickled bytes extend it; the read and write
+    timeouts are set to the time remaining before each call. A per-call deadline
+    checked only after `recv_blocking` returns never fires against a peer that
+    keeps pinging. Greptile found this on #3; a peer pinging every 100 ms held
+    `Session::open` past 10 s.
+  - **Writes need the deadline too, in small writes.** A pong echoes its ping, so
+    a near-`MAX_FRAME` ping yields a pong the socket can't hold, drained as slowly
+    as the peer likes. Linux applies a Unix socket's `SO_SNDTIMEO` per internal
+    buffer allocation (`sock_alloc_send_pskb`), not per `write`, so one 1 MiB
+    `write` kept blocking while the peer freed a buffer every 200 ms, even with the
+    timeout re-armed before it. `send` writes at most `WRITE_CHUNK` (4 KiB) per
+    call, so the deadline check between calls binds. Greptile's re-review on #3
+    found the unbounded write; fixed in kitten-lily/presence-bridge@514c828
+    (`a_slow_reader_does_not_extend_the_deadline_through_pong_writes` held
+    `Session::open` past 9 s before it).
   - `pump()` handles frames as they complete and reads at most `PUMP_BUDGET` (one
     maximal frame) per scan. The original read-until-EAGAIN loop never ended against a
     peer writing faster than it read.
-- **An expired socket read timeout is `WouldBlock`, not `TimedOut`.** On Linux,
-  `SO_RCVTIMEO` expiry returns EAGAIN, which std maps to `io::ErrorKind::WouldBlock`,
-  and its message is "Resource temporarily unavailable". `recv_blocking` maps it to
-  `TimedOut`, so callers and the log see a timeout.
+- **An expired socket timeout is `WouldBlock`, not `TimedOut`.** On Linux,
+  `SO_RCVTIMEO` and `SO_SNDTIMEO` expiry return EAGAIN, which std maps to
+  `io::ErrorKind::WouldBlock`, with the message "Resource temporarily unavailable".
+  `recv_blocking` and `send` map it to `TimedOut`, so callers and the log see a
+  timeout.
 
 ## Debugging traps
 
