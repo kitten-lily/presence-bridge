@@ -44,7 +44,11 @@ fn parse_args() -> Result<Opts, String> {
             "--once" => o.once = true,
             "--include-host" => o.include_host = true,
             "--interval" => {
-                let s: u64 = args.next().and_then(|v| v.parse().ok()).filter(|&s| s > 0).ok_or("--interval needs seconds > 0")?;
+                let s: u64 = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .filter(|&s| s > 0)
+                    .ok_or("--interval needs seconds > 0")?;
                 o.interval = Duration::from_secs(s);
             }
             "--db" => o.db = Some(args.next().ok_or("--db needs a file")?.into()),
@@ -204,7 +208,13 @@ fn main() -> ExitCode {
                 });
                 match res {
                     Ok(s) => {
-                        eprintln!("{} (pid {}): reported to {} via {}", game.name, game.pid, client.key, s.path.display());
+                        eprintln!(
+                            "{} (pid {}): reported to {} via {}",
+                            game.name,
+                            game.pid,
+                            client.key,
+                            s.path.display()
+                        );
                         failing.remove(&pair);
                         sessions.insert(pair, s);
                     }

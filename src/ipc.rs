@@ -276,8 +276,8 @@ impl Session {
         if self.buf.len() < 8 + len {
             return Ok(None);
         }
-        let msg = serde_json::from_slice(&self.buf[8..8 + len])
-            .map_err(|e| Error::Protocol(format!("bad JSON: {e}")))?;
+        let msg =
+            serde_json::from_slice(&self.buf[8..8 + len]).map_err(|e| Error::Protocol(format!("bad JSON: {e}")))?;
         self.buf.drain(..8 + len);
         Ok(Some((op, msg)))
     }
@@ -395,7 +395,11 @@ mod tests {
             assert_eq!(req["args"]["pid"], 42);
             let (op, pong) = read_frame(&mut s).unwrap();
             assert_eq!((op, pong), (OP_PONG, json!({ "x": 1 })));
-            write_frame(&mut s, OP_FRAME, &json!({ "cmd": "SET_ACTIVITY", "evt": null, "nonce": req["nonce"], "data": {} }));
+            write_frame(
+                &mut s,
+                OP_FRAME,
+                &json!({ "cmd": "SET_ACTIVITY", "evt": null, "nonce": req["nonce"], "data": {} }),
+            );
             // Dropping `s` closes the connection, as a quitting Discord would.
         });
 
