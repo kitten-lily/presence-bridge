@@ -15,6 +15,17 @@ file is what they don't say.
   Proton-CachyOS. Seen on 2026-10-09: `WoW.exe -launcherlogin -uid wow` and
   `Hearthstone.exe -launch -uid hs_beta`. Both matched their detectable entries
   (`_retail_/wow.exe`, `hearthstone.exe`) with no arguments rule.
+- **Steam flatpak games are visible in host `/proc`, with their host path as
+  argv0.** Neither the flatpak nor pressure-vessel (`SteamLinuxRuntime_soldier`)
+  hides them from the host. Seen on 2026-10-09: Valheim's native build ran as
+  `…/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/Valheim/valheim.x86_64`.
+- **A native Linux build matches only if the list has its Linux executable**, and
+  the list's entry usually describes the Proton build. Valheim's only entry is
+  `valheim/valheim.exe` (`win32`), so its native build was not detected, and Discord
+  showed nothing (the game doesn't use RPC either). Before expecting a native title
+  to show, check its entry:
+  `jq '.[] | select(.name | test("<title>"; "i"))' ~/.cache/presence-bridge/detectable.json`.
+  User-supplied aliases for this gap: #7.
 
 ## The detectable list
 
