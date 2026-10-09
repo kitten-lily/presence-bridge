@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#MISE description="Build, then run presence-bridge in the foreground"
+#MISE depends=["build"]
+#USAGE flag "--once" help="Scan once, print detected games and Discord clients, exit"
+#USAGE flag "--interval <secs>" help="Seconds between scans (default 5)"
+#USAGE flag "--include-host" help="Also report to the canonical XDG_RUNTIME_DIR/discord-ipc-N"
+#USAGE flag "--db <file>" help="Use this detectable-apps JSON; never fetch or cache"
+
+# Flags are rebuilt from usage_* rather than passed as "$@": mise has already
+# parsed them, and the binary's own parser is the authority on their meaning.
+
+set -euo pipefail
+
+args=()
+[[ "${usage_once:-}" == "true" ]] && args+=(--once)
+[[ -n "${usage_interval:-}" ]] && args+=(--interval "$usage_interval")
+[[ "${usage_include_host:-}" == "true" ]] && args+=(--include-host)
+[[ -n "${usage_db:-}" ]] && args+=(--db "$usage_db")
+
+exec target/release/presence-bridge "${args[@]}"

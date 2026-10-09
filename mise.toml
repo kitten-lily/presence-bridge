@@ -1,1 +1,18 @@
 # Tasks are file tasks under mise/tasks/; `mise tasks` lists them.
+
+# Every tool is pinned to an exact version: Renovate's mise manager reads the
+# string literally, so "latest" would drop the tool out of updates. Bump by
+# editing here, then `mise run mise-lock` to refresh mise.lock.
+# docs/skills/mise.md § Tool declarations.
+[tools]
+# krytis builds this crate with freedesktop-sdk's Rust, not this one. Its
+# freedesktop-sdk 26.08.2 junction builds rustc 1.98.1, so this moves with that
+# junction, never ahead of it. docs/skills/mise.md § The Rust pin.
+rust = { version = "1.98.1", components = "clippy,rustfmt" }
+# Parses the #USAGE headers in mise/tasks/*.
+usage = "6.12.1"
+
+[settings]
+# mise.lock is committed. Lockfiles are never created implicitly:
+# `mise run mise-lock` writes it.
+lockfile = true

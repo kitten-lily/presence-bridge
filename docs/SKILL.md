@@ -13,6 +13,10 @@ Load only the file for your current task. Writing a lesson back:
 | Match Steam games by app ID, or read a game's `SteamAppId` (#8) | [`docs/skills/detection.md`](skills/detection.md) § Steam's environment |
 | Check a title live, or smoke-test without launching a game | [`docs/skills/detection.md`](skills/detection.md) § Checking a title live |
 | Explain an activity that clears late after quitting a game | [`docs/skills/detection.md`](skills/detection.md) § Game processes |
+| Add or change a tool pin, or bump Rust | [`docs/skills/mise.md`](skills/mise.md) § The Rust pin, § Tool declarations |
+| Fix `mise.lock` drift, a backend warning, or `mise run mise-lock --check` failing | [`docs/skills/mise.md`](skills/mise.md) § `mise.lock` |
+| Write or change a task under `mise/tasks/`, or run several at once | [`docs/skills/mise.md`](skills/mise.md) § Creating a task, § Running several tasks |
+| Debug a task that sees flags it wasn't given, or loses an env var | [`docs/skills/mise.md`](skills/mise.md) § Inherited `usage_*`, in both directions |
 | Create a worktree/branch, stack a PR, answer Greptile, or merge | [`docs/skills/workflow.md`](skills/workflow.md) |
 | Fix `agent refused operation?` when committing | [`docs/skills/workflow.md`](skills/workflow.md) § Commit signing |
 | Check docs for broken references (`mise run docs-links`) | [`AGENTS.md`](../AGENTS.md) § Skill files rot too |
