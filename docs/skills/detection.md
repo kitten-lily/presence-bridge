@@ -45,6 +45,29 @@ file is what they don't say.
   so a stalled connection never ends. `db::fetch` sets `timeout_global` per request.
   The refresh also runs on a worker thread, so even a slow fetch doesn't stop sessions
   being served (Greptile on #3).
+- **Most entries can't be matched by executable.** On 2026-10-09, 14,168 of the
+  24,628 apps had `"executables": []`. Guildrun is one: present, but undetectable by
+  name. `db::trim` drops such entries, so check the **full** response, not the cache,
+  before concluding a title is missing:
+  `curl -sS https://discord.com/api/v9/applications/detectable | jq '.[] | select(.name | test("<title>"; "i"))'`.
+  Every entry carries `third_party_skus`: 8,895 of the empty ones have a `steam` ID.
+  Matching on those is #8.
+
+## Steam's environment
+
+- **Steam tags its whole launch tree with `SteamAppId`**, readable from the host in
+  `/proc/<pid>/environ`. While the Guildrun Demo ran under Proton (2026-10-09), about
+  20 processes carried `SteamAppId=4425970`. They included Steam's `reaper` wrapper
+  (lowest PID), pressure-vessel, Wine's services, Proton's `discord\bridge.exe`, the
+  game and its crash handlers. So "lowest PID with the ID" is the wrapper, not the
+  game.
+- **umu-launcher (Faugus) sets `SteamAppId=default`** for everything it launches,
+  Battle.net included, so a non-numeric ID is not a Steam app.
+- **A demo has its own app ID.** The demo was `4425970` and the full game `3669200`;
+  only the full game is on Discord's list. Steam's store API links them
+  (`store.steampowered.com/api/appdetails?appids=<id>` → `"fullgame": {"appid": …}`).
+- **Some of the user's own `environ` files are unreadable** (`Permission denied`), so
+  a scan that reads them must skip those quietly.
 
 ## Game processes
 
