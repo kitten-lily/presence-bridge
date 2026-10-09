@@ -125,6 +125,9 @@ fn main() -> ExitCode {
 
     let mut db: Option<db::Db> = None;
     let mut next_check = Instant::now();
+    // A list refresh in flight. The fetch is ~13 MB, so it runs on its own
+    // thread while sessions keep being served with the list already loaded.
+    let mut refresh: Option<std::thread::JoinHandle<Option<db::Db>>> = None;
     let mut sessions: HashMap<(String, String), ipc::Session> = HashMap::new();
     // Pairs whose last attempt failed, so a dead socket logs once, not every scan.
     let mut failing: HashSet<(String, String)> = HashSet::new();
@@ -138,15 +141,22 @@ fn main() -> ExitCode {
             std::thread::sleep(opts.interval);
             continue;
         }
-        if Instant::now() >= next_check {
-            if (db.is_none() || source.is_stale())
-                && let Some(fresh) = source.load()
-            {
+        if refresh.as_ref().is_some_and(|h| h.is_finished()) {
+            // A panicked refresh counts as a failed one: keep the current list.
+            if let Some(fresh) = refresh.take().and_then(|h| h.join().ok()).flatten() {
                 eprintln!("detectable apps: {}", fresh.len());
                 db = Some(fresh);
             }
             // Without any list, retry sooner than the hourly freshness check.
             next_check = Instant::now() + if db.is_some() { RECHECK } else { Duration::from_secs(300) };
+        }
+        if refresh.is_none() && Instant::now() >= next_check {
+            if db.is_none() || source.is_stale() {
+                let source = source.clone();
+                refresh = Some(std::thread::spawn(move || source.load()));
+            } else {
+                next_check = Instant::now() + RECHECK;
+            }
         }
         let Some(db) = &db else {
             std::thread::sleep(opts.interval);

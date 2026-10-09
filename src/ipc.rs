@@ -24,7 +24,12 @@ const OP_PONG: u32 = 4;
 /// Discord's own client caps a frame well below this; a larger length means
 /// the stream is out of sync, not a big message.
 const MAX_FRAME: usize = 1 << 20;
+/// Time a handshake or `SET_ACTIVITY` gets for its reply, end to end. Pings
+/// and trickled bytes do not extend it.
 const TIMEOUT: Duration = Duration::from_secs(3);
+/// Bytes one [`Session::pump`] reads: a peer that never stops sending gets
+/// one maximal frame's worth per scan instead of holding the loop.
+const PUMP_BUDGET: usize = MAX_FRAME + 8;
 
 /// A Discord client reachable from the host, keyed by its flatpak app ID.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,11 +135,10 @@ impl Session {
 
     fn open_path(path: &Path, app_id: &str) -> Result<Session, Error> {
         let stream = UnixStream::connect(path)?;
-        stream.set_read_timeout(Some(TIMEOUT))?;
         stream.set_write_timeout(Some(TIMEOUT))?;
         let mut s = Session { stream, buf: Vec::new(), nonce: 0, path: path.to_owned(), pid: 0 };
         s.send(OP_HANDSHAKE, &json!({ "v": 1, "client_id": app_id }))?;
-        let (op, msg) = s.recv_blocking()?;
+        let (op, msg) = s.recv_blocking(Instant::now() + TIMEOUT)?;
         match op {
             OP_FRAME if msg["evt"] == "READY" => Ok(s),
             OP_CLOSE => Err(Error::Rejected(msg)),
@@ -163,7 +167,7 @@ impl Session {
         )?;
         let deadline = Instant::now() + TIMEOUT;
         loop {
-            let (op, msg) = self.recv_blocking()?;
+            let (op, msg) = self.recv_blocking(deadline)?;
             match op {
                 OP_FRAME if msg["nonce"] == nonce.as_str() => {
                     if msg["evt"] == "ERROR" {
@@ -173,33 +177,40 @@ impl Session {
                     return Ok(());
                 }
                 OP_CLOSE => return Err(Error::Rejected(msg)),
-                _ if Instant::now() >= deadline => {
-                    return Err(Error::Protocol("no SET_ACTIVITY reply".into()));
-                }
                 _ => {}
             }
         }
     }
 
     /// Between scans: answer pings, discard unsolicited frames, and report
-    /// whether the client is still there. Never blocks.
+    /// whether the client is still there. Never blocks, and reads at most
+    /// [`PUMP_BUDGET`] bytes.
     pub fn pump(&mut self) -> Result<(), Error> {
         self.stream.set_nonblocking(true)?;
-        let res = self.fill_available();
+        let res = self.drain_available();
         self.stream.set_nonblocking(false)?;
-        res?;
-        while let Some((op, msg)) = self.take_frame()? {
-            self.handle_unsolicited(op, msg)?;
-        }
-        Ok(())
+        res
     }
 
-    fn fill_available(&mut self) -> Result<(), Error> {
+    /// Frames are handled as soon as they are complete, so the buffer never
+    /// holds more than one frame plus one read.
+    fn drain_available(&mut self) -> Result<(), Error> {
         let mut chunk = [0u8; 4096];
+        let mut budget = PUMP_BUDGET;
         loop {
-            match self.stream.read(&mut chunk) {
+            while let Some((op, msg)) = self.take_frame()? {
+                self.handle_unsolicited(op, msg)?;
+            }
+            if budget == 0 {
+                return Ok(());
+            }
+            let want = budget.min(chunk.len());
+            match self.stream.read(&mut chunk[..want]) {
                 Ok(0) => return Err(Error::Io(io::ErrorKind::UnexpectedEof.into())),
-                Ok(n) => self.buf.extend_from_slice(&chunk[..n]),
+                Ok(n) => {
+                    self.buf.extend_from_slice(&chunk[..n]);
+                    budget -= n;
+                }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
                 Err(e) => return Err(e.into()),
@@ -215,9 +226,10 @@ impl Session {
         }
     }
 
-    /// Next frame, waiting up to the socket timeout. Pings are answered here
-    /// too, so a ping arriving mid-request is not mistaken for the reply.
-    fn recv_blocking(&mut self) -> Result<(u32, Value), Error> {
+    /// Next frame, or a timeout once `deadline` passes. Pings are answered
+    /// here too, so a ping arriving mid-request is not mistaken for the reply;
+    /// they do not buy the peer more time.
+    fn recv_blocking(&mut self, deadline: Instant) -> Result<(u32, Value), Error> {
         loop {
             if let Some((op, msg)) = self.take_frame()? {
                 if op == OP_PING {
@@ -226,11 +238,20 @@ impl Session {
                 }
                 return Ok((op, msg));
             }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(Error::Io(io::ErrorKind::TimedOut.into()));
+            }
+            self.stream.set_read_timeout(Some(left))?;
             let mut chunk = [0u8; 4096];
             match self.stream.read(&mut chunk) {
                 Ok(0) => return Err(Error::Io(io::ErrorKind::UnexpectedEof.into())),
                 Ok(n) => self.buf.extend_from_slice(&chunk[..n]),
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                // An expired read timeout is EAGAIN on Linux, not ETIMEDOUT.
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    return Err(Error::Io(io::ErrorKind::TimedOut.into()));
+                }
                 Err(e) => return Err(e.into()),
             }
         }
@@ -366,6 +387,70 @@ mod tests {
         let client = Client { key: "test".into(), paths: vec![sock] };
         assert!(matches!(Session::open(&client, "0"), Err(Error::Rejected(v)) if v["code"] == 4000));
         server.join().unwrap();
+        fs::remove_dir_all(rt).unwrap();
+    }
+
+    /// Run `f` on its own thread; a hang fails the test instead of the suite.
+    fn within<T: Send + 'static>(limit: Duration, f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(limit).expect("still blocked")
+    }
+
+    #[test]
+    fn pings_do_not_extend_the_handshake_deadline() {
+        let rt = tempdir("ping-flood");
+        let sock = rt.join("discord-ipc-0");
+        let listener = UnixListener::bind(&sock).unwrap();
+        thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            read_frame(&mut s).unwrap();
+            // Never READY, just a ping every 100 ms until the bridge hangs up.
+            loop {
+                let body = b"{}";
+                let mut f = OP_PING.to_le_bytes().to_vec();
+                f.extend_from_slice(&(body.len() as u32).to_le_bytes());
+                f.extend_from_slice(body);
+                if s.write_all(&f).is_err() {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+        });
+        let client = Client { key: "test".into(), paths: vec![sock] };
+        let res = within(TIMEOUT * 3, move || Session::open(&client, "1").map(|_| ()));
+        assert!(matches!(res, Err(Error::Io(e)) if e.kind() == io::ErrorKind::TimedOut));
+        fs::remove_dir_all(rt).unwrap();
+    }
+
+    #[test]
+    fn pump_returns_while_the_peer_keeps_sending() {
+        let rt = tempdir("flood");
+        let sock = rt.join("discord-ipc-0");
+        let listener = UnixListener::bind(&sock).unwrap();
+        let (flooding_tx, flooding) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            read_frame(&mut s).unwrap();
+            write_frame(&mut s, OP_FRAME, &json!({ "evt": "READY" }));
+            let (_, req) = read_frame(&mut s).unwrap();
+            write_frame(&mut s, OP_FRAME, &json!({ "nonce": req["nonce"], "evt": null }));
+            // Valid unsolicited frames, 64 KiB per write, until the bridge hangs up.
+            let mut one = OP_FRAME.to_le_bytes().to_vec();
+            one.extend_from_slice(&2u32.to_le_bytes());
+            one.extend_from_slice(b"{}");
+            let burst: Vec<u8> = one.iter().copied().cycle().take(one.len() * 6554).collect();
+            s.write_all(&burst).unwrap();
+            flooding_tx.send(()).unwrap();
+            while s.write_all(&burst).is_ok() {}
+        });
+        let client = Client { key: "test".into(), paths: vec![sock] };
+        let mut s = Session::open(&client, "1").unwrap();
+        s.set_activity(1, None, false).unwrap();
+        flooding.recv().unwrap();
+        assert!(within(Duration::from_secs(5), move || s.pump().is_ok()));
         fs::remove_dir_all(rt).unwrap();
     }
 }

@@ -17,6 +17,9 @@ pub const DETECTABLE_URL: &str = "https://discord.com/api/v9/applications/detect
 
 /// The full API response is ~13 MB; ureq's default body cap is 10 MB.
 const MAX_BODY: u64 = 64 << 20;
+/// ureq sets no timeouts by default, so a stalled connection would never end.
+/// The fetch runs off the main loop, so this only bounds a hung refresh.
+const FETCH_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct App {
@@ -153,6 +156,7 @@ pub fn candidates(argv0: &str) -> Vec<String> {
 }
 
 /// Where the list comes from and when to look again.
+#[derive(Clone)]
 pub struct Source {
     cache: std::path::PathBuf,
     max_age: Duration,
@@ -215,6 +219,9 @@ impl Source {
 
 fn fetch() -> Result<Vec<App>, Box<dyn std::error::Error>> {
     let body = ureq::get(DETECTABLE_URL)
+        .config()
+        .timeout_global(Some(FETCH_TIMEOUT))
+        .build()
         .call()?
         .body_mut()
         .with_config()

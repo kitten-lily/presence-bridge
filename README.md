@@ -43,7 +43,8 @@ flowchart LR
   client and arRPC use. The response is ~13 MB / ~24.6k apps; only win32 and linux
   non-launcher executables are kept, leaving ~10.5k apps in a 1.3 MB cache under
   `$CACHE_DIRECTORY` (systemd) or `$XDG_CACHE_HOME/presence-bridge/`. It is refetched
-  when older than 24 h, and a stale cache is used when offline.
+  when older than 24 h, on a worker thread with a 5 min deadline, so sessions keep
+  being served with the loaded list meanwhile; a stale cache is used when offline.
 - **Matching** copies [arRPC](https://github.com/OpenAsar/arrpc)'s
   `src/process/index.js` rules, so a title is detected exactly when Vesktop/Equibop's
   built-in detection would detect it: lowercase, `\` → `/`, compare every path suffix
@@ -60,10 +61,14 @@ flowchart LR
   elapsed time is right when the bridge starts after the game. The lowest matching
   PID stands for a title. When the game exits the bridge sends `activity: null` and
   closes. When a client disappears or its socket hits EOF, the session is dropped and
-  retried on the next scan.
+  retried on the next scan. Anything can listen on a discovered socket, so a peer
+  cannot hold the loop: the handshake and each `SET_ACTIVITY` get 3 s end to end
+  (pings and trickled bytes do not extend it), and between scans a session reads at
+  most one maximal frame (1 MiB) of whatever the peer sends.
 
-Synchronous std I/O, no async runtime; dependencies are `serde`, `serde_json`, and
-`ureq` (rustls) for the one HTTPS fetch.
+Synchronous std I/O, no async runtime: one loop, plus a worker thread for the list
+refresh. Dependencies are `serde`, `serde_json`, and `ureq` (rustls) for the one
+HTTPS fetch.
 
 ## Usage
 
@@ -99,7 +104,8 @@ thing to run when presence does not show up. As a service, install the binary to
 The tests cover the matcher rules above, client discovery (relay ordering, empty-file
 stubs, host-socket opt-in), and a session against an in-process fake server
 (handshake, a ping before the reply, the `SET_ACTIVITY` payload, EOF detection, a 4000
-handshake rejection).
+handshake rejection, a ping flood that never sends `READY`, a peer that never stops
+sending).
 
 Live check, World of Warcraft under Faugus with the Discord flatpak:
 
