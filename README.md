@@ -74,14 +74,20 @@ HTTPS fetch.
 
 ## Usage
 
+mise provides the toolchain (Rust 1.98.1, pinned in `mise.toml`) and runs the tasks,
+so no Rust outside mise is needed. In a fresh clone or worktree, run `mise trust` once.
+
 ```console
-$ cargo build --release --locked
+$ mise run build              # target/release/presence-bridge
+$ mise run dev --once         # build, then scan once and print games and clients
+$ mise run dev                # build, then run the service loop in the foreground
 $ target/release/presence-bridge --help
 usage: presence-bridge [--once] [--interval SECS] [--include-host] [--db FILE]
 ```
 
-`--once` scans once and prints the detected games and reachable clients — the first
-thing to run when presence does not show up. As a service, install the binary to
+`mise run dev` takes the binary's flags (`--once`, `--interval`, `--include-host`,
+`--db`). `--once` scans once and prints the detected games and reachable clients — the
+first thing to run when presence does not show up. As a service, install the binary to
 `/usr/bin` and `systemd/presence-bridge.service` to `/usr/lib/systemd/user/`, then
 `systemctl --user enable --now presence-bridge`.
 
@@ -101,7 +107,13 @@ thing to run when presence does not show up. As a service, install the binary to
 
 ## Testing
 
-`cargo test --release --locked && cargo clippy --release --locked --all-targets -- -D warnings`
+`mise run lint ::: test` (`:::` separates tasks; `mise run lint test` would pass `test`
+to `lint` as an argument, which `lint` rejects). `lint` is `cargo fmt --check`
+(`rustfmt.toml`), clippy with warnings as errors, and `usage lint` on every task with a
+`#USAGE` spec; `test` is `cargo test --release --locked`, and takes a test filter
+(`mise run test ipc::`). After changing a pin in `mise.toml`, run `mise run mise-lock`
+and commit `mise.lock`; `mise run mise-lock --check` fails when the committed lockfile
+is behind. `mise run docs-links` checks the docs' references.
 
 The tests cover the matcher rules above, client discovery (relay ordering, empty-file
 stubs, host-socket opt-in), and a session against an in-process fake server
@@ -113,11 +125,11 @@ Live check, World of Warcraft under Faugus with the Discord flatpak:
 
 1. Start `com.discordapp.Discord` and log in, with activity sharing enabled under
    Settings → Activity Privacy.
-2. `presence-bridge --once` lists
+2. `mise run dev --once` lists
    `client com.discordapp.Discord: …/.flatpak/com.discordapp.Discord/xdg-run/discord-ipc-0`.
 3. Launch WoW from Faugus. `--once` lists
    `game World of Warcraft (356875762940379136) pid …`.
-4. Run `presence-bridge` and look for
+4. Run `mise run dev` and look for
    `World of Warcraft (pid …): reported to com.discordapp.Discord via …`; the Discord
    profile shows "Playing World of Warcraft" with the time since WoW started.
 5. Quit WoW: the log says `game exited, cleared`, and the activity disappears within

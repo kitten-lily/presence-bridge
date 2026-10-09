@@ -53,8 +53,7 @@ where
 fn trim(apps: Vec<App>) -> Vec<App> {
     apps.into_iter()
         .filter_map(|mut app| {
-            app.executables
-                .retain(|e| !e.is_launcher && e.os.as_deref() != Some("darwin") && !e.name.is_empty());
+            app.executables.retain(|e| !e.is_launcher && e.os.as_deref() != Some("darwin") && !e.name.is_empty());
             (!app.executables.is_empty()).then_some(app)
         })
         .collect()
@@ -82,11 +81,7 @@ impl Db {
                     Some(rest) => (rest, true),
                     None => (exe.name.as_str(), false),
                 };
-                by_name.entry(key.to_owned()).or_default().push(Entry {
-                    app: ai as u32,
-                    exe: ei as u32,
-                    exact,
-                });
+                by_name.entry(key.to_owned()).or_default().push(Entry { app: ai as u32, exe: ei as u32, exact });
             }
         }
         Db { apps, by_name }
@@ -137,10 +132,8 @@ pub fn candidates(argv0: &str) -> Vec<String> {
     let path = argv0.to_lowercase().replace('\\', "/");
     let parts: Vec<&str> = path.split('/').collect();
     let parts = if parts.len() > 1 { &parts[1..] } else { &parts[..] };
-    let mut out: Vec<String> = (1..=parts.len())
-        .map(|i| parts[parts.len() - i..].join("/"))
-        .filter(|s| !s.is_empty())
-        .collect();
+    let mut out: Vec<String> =
+        (1..=parts.len()).map(|i| parts[parts.len() - i..].join("/")).filter(|s| !s.is_empty()).collect();
     let base = out.len();
     for i in 0..base {
         for marker in ["64", ".x64", "x64", "_64"] {
@@ -177,9 +170,7 @@ impl Source {
     /// cache when offline. `None` only when there is no list at all.
     pub fn load(&self) -> Option<Db> {
         if self.fixed {
-            return read_file(&self.cache)
-                .map_err(|e| eprintln!("cannot read {}: {e}", self.cache.display()))
-                .ok();
+            return read_file(&self.cache).map_err(|e| eprintln!("cannot read {}: {e}", self.cache.display())).ok();
         }
         let age = fs::metadata(&self.cache)
             .and_then(|m| m.modified())
@@ -269,7 +260,11 @@ mod tests {
                 name: "Some Launcher".into(),
                 executables: vec![Executable { is_launcher: true, ..exe("launcher.exe") }],
             },
-            App { id: "3".into(), name: "Mac Only".into(), executables: vec![Executable { os: Some("darwin".into()), ..exe("mac.app") }] },
+            App {
+                id: "3".into(),
+                name: "Mac Only".into(),
+                executables: vec![Executable { os: Some("darwin".into()), ..exe("mac.app") }],
+            },
         ])
     }
 

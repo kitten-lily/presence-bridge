@@ -4,6 +4,28 @@ Agent entry point for presence-bridge. What the service does and why is in
 [`README.md`](README.md). Lessons live in `docs/skills/`; load only the file your
 task needs, routed by [`docs/SKILL.md`](docs/SKILL.md).
 
+## Tasks and verification
+
+Cut down from [krytis § Mandatory Gates](https://github.com/starlit-os/krytis/blob/main/AGENTS.md#mandatory-gates).
+How mise and the tasks behave, and the traps, are in
+[`docs/skills/mise.md`](docs/skills/mise.md); this section is only the rules.
+
+- **Task integrity.** Every maintenance action is a mise task under `mise/tasks/`: no
+  loose shell commands to repeat, and no standalone scripts elsewhere. Anything an
+  agent does must be repeatable by a human with `mise run <task>`. If no task covers a
+  change, add one in the same change. Don't rename existing tasks without the
+  maintainer's approval.
+- **Toolchain.** Rust and every other tool come from `mise.toml`, pinned exactly. After
+  changing a pin, run `mise run mise-lock` and commit `mise.lock` with it.
+- **Verification.** A PR states that `mise run lint ::: test` passed, and links the run
+  or pastes the result. `mise run lint test` is not the same command: it runs only
+  `lint` (`docs/skills/mise.md` § Running several tasks). A PR that changes docs also
+  states that `mise run docs-links` passed, and one that changes `mise.toml` that
+  `mise run mise-lock --check` did. A change to runtime behaviour also gets a live check
+  (`README.md` § Testing).
+- **Mise and toolchain lessons** go into `docs/skills/mise.md`, in the same commit as
+  the change that taught them (§ The Self-Improvement Loop below).
+
 ## The Self-Improvement Loop
 
 Ported from [krytis § The Self-Improvement Loop](https://github.com/starlit-os/krytis/blob/main/AGENTS.md#the-self-improvement-loop).
@@ -56,7 +78,7 @@ was rebuilt on 2026-10-09 and its cited `e016101` stopped being on any branch.
 - [ ] Did I discover a workaround, non-obvious pattern, or convention?
 - [ ] Is the relevant `docs/skills/` file updated, in the same commit as the change?
 - [ ] If no skill file covers this area, did I create one and route it?
-- [ ] Does `mise run docs-links` pass?
+- [ ] Do `mise run lint ::: test` and, for docs, `mise run docs-links` pass?
 
 ### Where a lesson lives
 
@@ -65,7 +87,7 @@ was rebuilt on 2026-10-09 and its cited `e016101` stopped being on any branch.
 | Discord IPC protocol, client sockets and behaviour, peer handling | here, [`docs/skills/ipc.md`](docs/skills/ipc.md) |
 | Detection and matching rules, the detectable list, crate dependencies, game process behaviour | here, [`docs/skills/detection.md`](docs/skills/detection.md) |
 | Branches, review, merging, and cross-repo pairing in this repo | here, [`docs/skills/workflow.md`](docs/skills/workflow.md) |
-| The mise toolchain | here, `docs/skills/` |
+| The mise toolchain, `mise.toml`, `mise.lock`, tasks | here, [`docs/skills/mise.md`](docs/skills/mise.md) |
 | Flatpak sandbox internals, BuildStream packaging, the user unit and preset in the image, freedesktop-sdk's Rust version, commit-signing hardware | krytis, [`bst.md`](https://github.com/starlit-os/krytis/blob/main/docs/skills/bst.md) and [`workflow.md`](https://github.com/starlit-os/krytis/blob/main/docs/skills/workflow.md) |
 
 If a lesson spans both, put each half where it belongs and link them.
@@ -117,7 +139,9 @@ Two more rules:
 
 Name the owning repo when citing a file that lives elsewhere. Link it by URL, never
 by a bare path, because `docs-links` would report a krytis `docs/…` path as missing
-here.
+here. Keep the file name out of a `§` link's text too: `docs-links` resolves link
+text like ``krytis `mise.md` § X`` against **this** repo's `mise.md`, and fails on a
+heading only krytis has. Make the text `krytis § X`.
 
 krytis runs a deliberate rot sweep with its `skill-rot-audit` skill. This repo
 doesn't need one at its size; port it when `docs/skills/` passes a few hundred lines
