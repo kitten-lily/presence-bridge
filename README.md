@@ -45,8 +45,9 @@ flowchart LR
   `$CACHE_DIRECTORY` (systemd) or `$XDG_CACHE_HOME/presence-bridge/`. It is refetched
   when older than 24 h, on a worker thread with a 5 min deadline, so sessions keep
   being served with the loaded list meanwhile; a stale cache is used when offline.
-- **Matching** copies [arRPC](https://github.com/OpenAsar/arrpc)'s
-  `src/process/index.js` rules, so a title is detected exactly when Vesktop/Equibop's
+- **Matching** copies the rules in [arRPC](https://github.com/OpenAsar/arrpc)'s
+  [`process/index.js`](https://github.com/OpenAsar/arrpc/blob/main/src/process/index.js),
+  so a title is detected exactly when Vesktop/Equibop's
   built-in detection would detect it: lowercase, `\` → `/`, compare every path suffix
   (and the `64`/`x64`/`_64`-stripped variants) against executable names; `>name` must
   equal the basename; `arguments` must appear in the joined argv. It reads **argv0
