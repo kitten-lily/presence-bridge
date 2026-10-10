@@ -17,6 +17,8 @@ Load only the file for your current task. Writing a lesson back:
 | Fix `mise.lock` drift, a backend warning, or `mise run mise-lock --check` failing | [`docs/skills/mise.md`](skills/mise.md) § `mise.lock` |
 | Write or change a task under `mise/tasks/`, or run several at once | [`docs/skills/mise.md`](skills/mise.md) § Creating a task, § Running several tasks |
 | Debug a task that sees flags it wasn't given, or loses an env var | [`docs/skills/mise.md`](skills/mise.md) § Inherited `usage_*`, in both directions |
+| Change `.github/renovate.json5`, or check what Renovate would open and auto-merge | [`docs/skills/renovate.md`](skills/renovate.md) § Checking the config |
+| Find out why a Renovate PR didn't open or didn't auto-merge | [`docs/skills/renovate.md`](skills/renovate.md) § Auto-merge needs at least one check, § Silent drops under `pinDigests` |
 | Create a worktree/branch, stack a PR, answer Greptile, or merge | [`docs/skills/workflow.md`](skills/workflow.md) |
 | Fix `agent refused operation?` when committing | [`docs/skills/workflow.md`](skills/workflow.md) § Commit signing |
 | Check docs for broken references (`mise run docs-links`) | [`AGENTS.md`](../AGENTS.md) § Skill files rot too |

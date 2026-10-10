@@ -52,13 +52,39 @@ badges.
 - After pushing the fixes, ask for a re-review with a PR comment that says only
   `@greptileai`: `gh pr comment <n> --body @greptileai`.
 
+### Renovate PRs get no review
+
+`.greptile/config.json` sets `excludeAuthors: ["renovate[bot]"]`. Greptile reviews
+every new PR by default, and a dependency bump gives it little to review. Two things
+about the file:
+
+- **Greptile reads it from the PR's source branch**
+  ([greptile.json reference](https://www.greptile.com/docs/code-review/greptile-json-reference)),
+  and Renovate cuts its branches from `main`, so the exclusion works only once it is
+  on `main`.
+- **Greptile's docs disagree on whether it works in a file.** The
+  [`.greptile/` reference](https://www.greptile.com/docs/code-review/greptile-config-reference)
+  lists `excludeAuthors`. Its
+  [troubleshooting page](https://www.greptile.com/docs/code-review/controlling-nitpickiness)
+  says author exclusion is "dashboard-only, not available in greptile.json"
+  (both as of 2026-10-10). So exclude `renovate[bot]` in the dashboard too. The docs
+  lag the UI. As of 2026-10-10 the filters are under Settings > Code Review >
+  Greptile Review Configuration > Filters, and the page says "Only pull requests
+  that meet all the conditions in any rule below get automatically reviewed". So
+  conditions inside a rule are ANDed and rules are ORed, and with no rules every PR
+  is reviewed. One rule whose only condition excludes `renovate[bot]` skips Renovate
+  and reviews everything else. A rule added later reviews whatever it matches, so it
+  needs the `renovate[bot]` exclusion too, or Renovate PRs that match it get reviewed
+  again. The dashboard isn't in the repo, so check it there when a Renovate PR still
+  gets a review.
+
 ## Merging
 
 Merge with a **merge commit**, never squash or rebase. A krytis commit that pairs
 with a commit here cites its SHA (AGENTS.md § The Self-Improvement Loop); squash and
 rebase merges create new SHAs and leave that citation pointing at a commit on no
-branch. All three merge methods are enabled on the repo (as of 2026-10-09), so pick
-it explicitly.
+branch. Squash and rebase merges are disabled on the repo (since 2026-10-10), and
+Renovate's `automergeStrategy` is `"merge"` to match ([`renovate.md`](renovate.md) § Merging).
 
 ## Commit signing
 
