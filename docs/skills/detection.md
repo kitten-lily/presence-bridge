@@ -33,7 +33,8 @@ don't say.
   either). It is detected by its Steam ID instead (§ Steam's environment). Before
   expecting a native title from outside Steam to show, check its entry:
   `jq '.[] | select(.name | test("<title>"; "i"))' ~/.cache/presence-bridge/detectable-v2.json`.
-  User-supplied aliases for such builds: #7.
+  User-supplied aliases for such builds are designed in #7, closed as not planned on
+  2026-10-10. Reopen it when a game needs them; its body lists the checks first.
 
 ## The detectable list
 
