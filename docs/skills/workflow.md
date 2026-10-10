@@ -44,26 +44,37 @@ checkout, and its tracking lives in the clone's common git directory, so every w
 sees it. `link` with PR numbers pushes nothing, opens no PRs and sets the bases. Use it
 instead of `gh stack submit`, which writes PR titles and bodies in its own editor, or
 generates them with `--auto`. A stack takes a number from the same sequence as issues
-and PRs: #10 and #12 became stack #14 on 2026-10-10.
+and PRs: #10 and #12 became stack #14 on 2026-10-10. The local tracking `init`
+writes isn't tied to that number, so once the stack has merged
+`gh stack unstack 14 --local` reports `stack #14 is not tracked locally`. Plain
+`gh stack unstack --local` removed it.
 
 How a stack differs from PRs that merely target each other's branches:
 
-- **Merging needs a linear history.** Once `main` moves (any merge, Renovate's
-  included), `gh stack view` marks the bottom layer ⚠ and `--json` reports
-  `needsRebase: true`. Stack #14 hit this when #13 merged before it. Restore it with
+- **A moved `main` didn't block merging the bottom PR.** Once `main` moves (any
+  merge, Renovate's included), `gh stack view` marks the bottom layer ⚠ and `--json`
+  reports `needsRebase: true`. Stack #14 hit this when #13 merged first, and #10
+  still merged with a merge commit and no rebase (`c498eb4`, 2026-10-10). GitHub's
+  docs require a linear history between the stack's branches, and the automatic
+  rebase below keeps the upper layers linear. To rebase anyway, run
   `gh stack rebase`, then `gh stack push`. That rewrites every commit in the stack, so
   each one is re-signed and needs a key touch (§ Commit signing). The merge box's
-  **Rebase stack** button rebases on GitHub with no touch, but then GitHub signs the
-  new commits, not your key.
+  **Rebase stack** button rebases on GitHub with no touch, and GitHub signs the
+  result.
 - **Merge from the bottom up, with a merge commit** (§ Merging), from the merge box
   or with `gh stack merge --merge`. Merging the top PR merges the whole stack at once,
   one merge commit per PR, and keeps every commit. GitHub says the legacy merge
   endpoints can't merge a stack, so `gh pr merge` may fail on one; this hasn't been
   tried here.
-- **Merging only the bottom rebases the layers above it** automatically, which gives
-  their commits new SHAs. So don't cite a higher layer's SHA from krytis
-  (AGENTS.md § The Self-Improvement Loop) until that layer has merged. Or merge the
-  whole stack at once. The layers above retarget `main` by themselves.
+- **Merging only the bottom rebases the layers above it** onto `main`, which gives
+  their commits new SHAs signed by GitHub. After #10 merged, #12's `668c32b` came
+  back as `c30c79b`: committer `GitHub <noreply@github.com>`, verified, with the
+  merge commit `c498eb4` as its parent. So don't cite a higher layer's SHA from krytis
+  (AGENTS.md § The Self-Improvement Loop) until that layer has merged, or merge the
+  whole stack at once from the top PR. The layers above retarget `main` by
+  themselves. A local branch still at the old SHA has no merged commit, so
+  `git branch -d` refuses it. `git cherry main <branch>` marking its commits `-`
+  shows they landed, and then `git branch -D` is safe.
 - **CI** runs for every PR in the stack, but each run reads the workflow from that
   PR's own branch. #10 sat below the layer that added `checks.yml` and got no CI run.
 - **A fix and its lesson go in the same commit**, not just the same layer
@@ -123,6 +134,11 @@ with a commit here cites its SHA (AGENTS.md § The Self-Improvement Loop); squas
 rebase merges create new SHAs and leave that citation pointing at a commit on no
 branch. Squash and rebase merges are disabled on the repo (since 2026-10-10), and
 Renovate's `automergeStrategy` is `"merge"` to match ([`renovate.md`](renovate.md) § Merging).
+
+**`Closes #N` in a commit message closes the issue whatever follows the keyword.**
+#10's commit said "Closes #4 once the app is installed and CI exists", and #4 closed
+3 s after the merge with its acceptance items still open. Write `Part of #N` when the
+merge doesn't finish the issue.
 
 ## Commit signing
 
