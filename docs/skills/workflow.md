@@ -67,9 +67,12 @@ about the file:
   lists `excludeAuthors`. Its
   [troubleshooting page](https://www.greptile.com/docs/code-review/controlling-nitpickiness)
   says author exclusion is "dashboard-only, not available in greptile.json"
-  (both as of 2026-10-10). So exclude `renovate[bot]` in the dashboard too (Code
-  Review Settings > Greptile Comments > Authors > Exclude). The dashboard isn't in the
-  repo, so check it there when a Renovate PR still gets a review.
+  (both as of 2026-10-10). So exclude `renovate[bot]` in the dashboard too: Settings >
+  Code Review > When Greptile Reviews > Filters, an `Authors` / `Exclude` row. That
+  page names "Greptile Comments", but the
+  [quickstart's screenshot](https://www.greptile.com/docs/quickstart) has the filters
+  under When Greptile Reviews. The dashboard isn't in the repo, so check it there
+  when a Renovate PR still gets a review.
 
 ## Merging
 
