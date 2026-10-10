@@ -33,7 +33,7 @@ jobs:
           # (docs/skills/mise.md § mise.lock). The action adds --locked to
           # `mise install` itself when mise.lock exists.
           # renovate: datasource=github-releases depName=jdx/mise
-          version: 2026.10.3
+          version: 2026.10.5
 
       - name: mise.lock matches mise.toml
         run: mise run mise-lock --check
