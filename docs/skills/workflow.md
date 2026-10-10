@@ -67,12 +67,16 @@ about the file:
   lists `excludeAuthors`. Its
   [troubleshooting page](https://www.greptile.com/docs/code-review/controlling-nitpickiness)
   says author exclusion is "dashboard-only, not available in greptile.json"
-  (both as of 2026-10-10). So exclude `renovate[bot]` in the dashboard too: Settings >
-  Code Review > When Greptile Reviews > Filters, an `Authors` / `Exclude` row. That
-  page names "Greptile Comments", but the
-  [quickstart's screenshot](https://www.greptile.com/docs/quickstart) has the filters
-  under When Greptile Reviews. The dashboard isn't in the repo, so check it there
-  when a Renovate PR still gets a review.
+  (both as of 2026-10-10). So exclude `renovate[bot]` in the dashboard too. The docs
+  lag the UI. As of 2026-10-10 the filters are under Settings > Code Review >
+  Greptile Review Configuration > Filters, and the page says "Only pull requests
+  that meet all the conditions in any rule below get automatically reviewed". So
+  conditions inside a rule are ANDed and rules are ORed, and with no rules every PR
+  is reviewed. One rule whose only condition excludes `renovate[bot]` skips Renovate
+  and reviews everything else. A rule added later reviews whatever it matches, so it
+  needs the `renovate[bot]` exclusion too, or Renovate PRs that match it get reviewed
+  again. The dashboard isn't in the repo, so check it there when a Renovate PR still
+  gets a review.
 
 ## Merging
 
