@@ -92,11 +92,22 @@ don't say.
   still be running after the game exits, and a lone `reaper` looks the same as one
   before the game started. So `running` remembers per title what stood for it during
   the current launch (`Shown`): once that has exited, the rest of the tree doesn't
-  keep the title shown, and a title is forgotten when its tree is gone. The same
-  goes for a title matched by executable: without this, a crash handler in the
-  game's directory took over once `valheim.exe` exited (Greptile on #20). Live, a
-  stand-in game's title was cleared on the first scan after it exited, while its
-  stand-in `reaper` kept running (2026-10-10).
+  keep the title shown. The same goes for a title matched by executable: without
+  this, a crash handler in the game's directory took over once `valheim.exe` exited
+  (Greptile on #20). Live, a stand-in game's title was cleared on the first scan
+  after it exited, while its stand-in `reaper` kept running (2026-10-10).
+- **Key that memory by launch, not by "a scan saw the tree gone".** Scans pause
+  while no Discord client runs, so Valheim through Proton can end and its native
+  build start without any scan in between. Keyed only by title, the old
+  `Executable` hid the native game for its whole launch (Greptile on #20).
+  `LaunchKey` is the tree's first process, `reaper`: its PID and start ticks, so a
+  reused PID is a new launch too.
+- **Any process in the game's directory counts as the game**, so a crash handler
+  there keeps a title shown as long as it runs. That is deliberate: a game may start
+  through a bootstrap binary in its directory that hands over to another and exits,
+  and pinning the first PID would drop the title at the hand-over. Guildrun's crash
+  handlers did not outlive it: with the first build of #20, which kept a title while
+  any process of its tree ran, the title cleared when Guildrun was quit (2026-10-10).
 - **umu-launcher (Faugus) sets `SteamAppId=default`** for everything it launches,
   Battle.net included, so a non-numeric ID is not a Steam app.
 - **A demo has its own app ID.** The demo was `4425970` and the full game `3669200`;

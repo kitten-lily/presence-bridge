@@ -84,7 +84,7 @@ struct Game {
 #[derive(Default)]
 struct SteamState {
     demos: steam::Demos,
-    shown: HashMap<String, Shown>,
+    shown: HashMap<String, (LaunchKey, Shown)>,
 }
 
 /// What has stood for a title during its current Steam launch.
@@ -92,6 +92,20 @@ struct SteamState {
 enum Shown {
     Executable,
     GameDir,
+}
+
+/// A Steam launch, told apart from the next by its first process (`reaper`, the
+/// lowest PID with the ID): its PID and start ticks, so a reused PID is a new
+/// launch too. Scans pause while no Discord client runs, so one launch can end
+/// and the next start without any scan seeing the title gone.
+type LaunchKey = (u32, Option<u64>);
+
+/// One title's Steam launch tree in this scan.
+struct Tree<'a> {
+    app: &'a db::App,
+    /// The lowest PID running from the game's own directory.
+    game: Option<u32>,
+    first: LaunchKey,
 }
 
 fn detect(db: &db::Db, uid: u32, boot: Option<SystemTime>, state: &mut SteamState) -> BTreeMap<String, Game> {
@@ -117,13 +131,14 @@ fn detect(db: &db::Db, uid: u32, boot: Option<SystemTime>, state: &mut SteamStat
 /// Wine's services, `reaper` and crash handlers can outlive the game, so
 /// `shown` remembers, per title, what stood for it during the current launch:
 /// once the executable match or the game has exited, the rest of the tree
-/// doesn't keep the title shown. A title is forgotten when no process of its
-/// launch tree remains. `full_game` maps a demo's app ID to its full game's.
+/// doesn't keep the title shown. That is forgotten when the launch ends: its
+/// tree is gone, or its first process differs. `full_game` maps a demo's app ID
+/// to its full game's.
 fn running<'a>(
     db: &'a db::Db,
     procs: &[scan::Proc],
     mut full_game: impl FnMut(&steam::Launch) -> Option<u32>,
-    shown: &mut HashMap<String, Shown>,
+    shown: &mut HashMap<String, (LaunchKey, Shown)>,
 ) -> BTreeMap<&'a str, (&'a db::App, u32)> {
     let mut found: BTreeMap<&str, (&db::App, u32)> = BTreeMap::new();
     for p in procs {
@@ -132,41 +147,42 @@ fn running<'a>(
             hit.1 = hit.1.min(p.pid);
         }
     }
-    // Per title: the lowest PID in the game's directory, and the lowest at all.
-    let mut steam: BTreeMap<&str, (&db::App, Option<u32>, u32)> = BTreeMap::new();
+    let mut steam: BTreeMap<&str, Tree> = BTreeMap::new();
     for p in procs {
         let Some(launch) = &p.steam else { continue };
         let Some(app) = db.steam(launch.app).or_else(|| db.steam(full_game(launch)?)) else { continue };
         let game = launch.runs_game(&p.argv0).then_some(p.pid);
-        let hit = steam.entry(&app.id).or_insert((app, game, p.pid));
-        hit.1 = match (hit.1, game) {
+        let tree = steam.entry(&app.id).or_insert(Tree { app, game, first: (p.pid, p.start) });
+        tree.game = match (tree.game, game) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         };
-        hit.2 = hit.2.min(p.pid);
+        if p.pid < tree.first.0 {
+            tree.first = (p.pid, p.start);
+        }
     }
-    shown.retain(|id, _| steam.contains_key(id.as_str()));
-    for (id, (app, game, lowest)) in steam {
+    shown.retain(|id, (launch, _)| steam.get(id.as_str()).is_some_and(|t| t.first == *launch));
+    for (id, tree) in steam {
         let now = if found.contains_key(id) {
             Shown::Executable
         } else {
-            match (shown.get(id), game) {
+            match (shown.get(id).map(|s| s.1), tree.game) {
                 // Its executable, or the game, has exited; helpers don't count.
                 (Some(Shown::Executable), _) | (Some(Shown::GameDir), None) => continue,
                 (_, Some(pid)) => {
-                    found.insert(id, (app, pid));
+                    found.insert(id, (tree.app, pid));
                     Shown::GameDir
                 }
                 (None, None) => {
-                    found.insert(id, (app, lowest));
+                    found.insert(id, (tree.app, tree.first.0));
                     continue;
                 }
             }
         };
         match shown.get_mut(id) {
-            Some(s) => *s = now,
+            Some(s) => s.1 = now,
             None => {
-                shown.insert(id.to_owned(), now);
+                shown.insert(id.to_owned(), (tree.first, now));
             }
         }
     }
@@ -354,7 +370,7 @@ mod tests {
 
     fn proc(pid: u32, argv0: &str, app: Option<(u32, &str)>) -> scan::Proc {
         let steam = app.map(|(app, dir)| steam::Launch { app, install_dir: Some(dir.into()), client: None });
-        scan::Proc { pid, argv0: argv0.into(), args: Vec::new(), steam }
+        scan::Proc { pid, argv0: argv0.into(), args: Vec::new(), steam, start: None }
     }
 
     /// One scan with nothing remembered from earlier ones.
@@ -362,7 +378,11 @@ mod tests {
         scan(db, procs, &mut HashMap::new())
     }
 
-    fn scan(db: &db::Db, procs: &[scan::Proc], shown: &mut HashMap<String, Shown>) -> Vec<(&'static str, u32)> {
+    fn scan(
+        db: &db::Db,
+        procs: &[scan::Proc],
+        shown: &mut HashMap<String, (LaunchKey, Shown)>,
+    ) -> Vec<(&'static str, u32)> {
         let names = |id: &str| if id.starts_with("1529") { "Guildrun" } else { "Valheim" };
         running(db, procs, |l| (l.app == 4425970).then_some(3669200), shown)
             .into_iter()
@@ -460,5 +480,21 @@ mod tests {
         // `valheim.exe` exited. The crash handler is in the game's directory,
         // but it isn't the executable that stood for the title.
         assert!(scan(&db, &[reaper(), handler()], &mut shown).is_empty());
+    }
+
+    #[test]
+    fn a_new_launch_starts_over_though_no_scan_saw_the_last_one_end() {
+        // Scans pause while Discord is closed: Valheim through Proton, matched by
+        // executable, then its native build, with no scan in between.
+        let tag = Some((892970, "valheim"));
+        let reaper = |pid, start| scan::Proc { start: Some(start), ..proc(pid, "/s/Steam/ubuntu12_32/reaper", tag) };
+        let native = |pid| proc(pid, "/s/steamapps/common/Valheim/valheim.x86_64", tag);
+        let (db, mut shown) = (db(), HashMap::new());
+        let proton = [reaper(500, 1), proc(600, r"S:\common\Valheim\valheim.exe", tag)];
+        assert_eq!(scan(&db, &proton, &mut shown), [("Valheim", 600)]);
+        assert_eq!(scan(&db, &[reaper(900, 2), native(950)], &mut shown), [("Valheim", 950)]);
+        // A new launch whose `reaper` got a reused PID: its start time differs.
+        assert_eq!(scan(&db, &proton, &mut shown), [("Valheim", 600)]);
+        assert_eq!(scan(&db, &[reaper(500, 3), native(550)], &mut shown), [("Valheim", 550)]);
     }
 }
