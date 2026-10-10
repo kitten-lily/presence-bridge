@@ -17,7 +17,7 @@ pub struct Proc {
     /// Set when Steam launched this process or an ancestor.
     pub steam: Option<steam::Launch>,
     /// Start time in clock ticks after boot; read for Steam's processes only,
-    /// to tell one launch from the next when a PID is reused.
+    /// to tell a reused PID from the process that had it before.
     pub start: Option<u64>,
 }
 

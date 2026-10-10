@@ -84,8 +84,20 @@ struct Game {
 #[derive(Default)]
 struct SteamState {
     demos: steam::Demos,
-    shown: HashMap<String, (LaunchKey, Shown)>,
+    launches: HashMap<String, KnownLaunch>,
 }
+
+/// A title's current Steam launch, as of the last scan.
+struct KnownLaunch {
+    /// Its processes then. The next scan's tree is the same launch while any of
+    /// them remains. Scans pause while no Discord client runs, so one launch can
+    /// end and the next start without a scan seeing the title gone.
+    procs: Vec<ProcKey>,
+    shown: Shown,
+}
+
+/// A process's PID and start ticks, so a reused PID is another process.
+type ProcKey = (u32, Option<u64>);
 
 /// What has stood for a title during its current Steam launch.
 #[derive(Clone, Copy, PartialEq)]
@@ -94,25 +106,21 @@ enum Shown {
     GameDir,
 }
 
-/// A Steam launch, told apart from the next by its first process (`reaper`, the
-/// lowest PID with the ID): its PID and start ticks, so a reused PID is a new
-/// launch too. Scans pause while no Discord client runs, so one launch can end
-/// and the next start without any scan seeing the title gone.
-type LaunchKey = (u32, Option<u64>);
-
 /// One title's Steam launch tree in this scan.
 struct Tree<'a> {
     app: &'a db::App,
     /// The lowest PID running from the game's own directory.
     game: Option<u32>,
-    first: LaunchKey,
+    /// The lowest PID with the ID: `reaper`, while it runs.
+    first: u32,
+    procs: Vec<ProcKey>,
 }
 
 fn detect(db: &db::Db, uid: u32, boot: Option<SystemTime>, state: &mut SteamState) -> BTreeMap<String, Game> {
     let procs = scan::processes(uid);
     let demos = &mut state.demos;
     let full_game = |l: &steam::Launch| demos.full_game(l.client.as_deref()?, l.app);
-    running(db, &procs, full_game, &mut state.shown)
+    running(db, &procs, full_game, &mut state.launches)
         .into_iter()
         .map(|(id, (app, pid))| {
             let start_ms = boot.and_then(|b| scan::start_ms(pid, b));
@@ -129,16 +137,16 @@ fn detect(db: &db::Db, uid: u32, boot: Option<SystemTime>, state: &mut SteamStat
 /// the lowest PID, Steam's `reaper` wrapper, stands in.
 ///
 /// Wine's services, `reaper` and crash handlers can outlive the game, so
-/// `shown` remembers, per title, what stood for it during the current launch:
-/// once the executable match or the game has exited, the rest of the tree
-/// doesn't keep the title shown. That is forgotten when the launch ends: its
-/// tree is gone, or its first process differs. `full_game` maps a demo's app ID
-/// to its full game's.
+/// `launches` remembers, per title, what stood for it during the current
+/// launch: once the executable match or the game has exited, the rest of the
+/// tree doesn't keep the title shown. That is forgotten when the launch ends,
+/// when none of its processes remains. `full_game` maps a demo's app ID to its
+/// full game's.
 fn running<'a>(
     db: &'a db::Db,
     procs: &[scan::Proc],
     mut full_game: impl FnMut(&steam::Launch) -> Option<u32>,
-    shown: &mut HashMap<String, (LaunchKey, Shown)>,
+    launches: &mut HashMap<String, KnownLaunch>,
 ) -> BTreeMap<&'a str, (&'a db::App, u32)> {
     let mut found: BTreeMap<&str, (&db::App, u32)> = BTreeMap::new();
     for p in procs {
@@ -152,37 +160,36 @@ fn running<'a>(
         let Some(launch) = &p.steam else { continue };
         let Some(app) = db.steam(launch.app).or_else(|| db.steam(full_game(launch)?)) else { continue };
         let game = launch.runs_game(&p.argv0).then_some(p.pid);
-        let tree = steam.entry(&app.id).or_insert(Tree { app, game, first: (p.pid, p.start) });
+        let tree = steam.entry(&app.id).or_insert(Tree { app, game, first: p.pid, procs: Vec::new() });
         tree.game = match (tree.game, game) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         };
-        if p.pid < tree.first.0 {
-            tree.first = (p.pid, p.start);
-        }
+        tree.first = tree.first.min(p.pid);
+        tree.procs.push((p.pid, p.start));
     }
-    shown.retain(|id, (launch, _)| steam.get(id.as_str()).is_some_and(|t| t.first == *launch));
+    launches.retain(|id, l| steam.get(id.as_str()).is_some_and(|t| t.procs.iter().any(|p| l.procs.contains(p))));
     for (id, tree) in steam {
-        let now = if found.contains_key(id) {
-            Shown::Executable
+        let before = launches.get(id).map(|l| l.shown);
+        let (pid, now) = if found.contains_key(id) {
+            (None, Some(Shown::Executable))
         } else {
-            match (shown.get(id).map(|s| s.1), tree.game) {
+            match (before, tree.game) {
                 // Its executable, or the game, has exited; helpers don't count.
-                (Some(Shown::Executable), _) | (Some(Shown::GameDir), None) => continue,
-                (_, Some(pid)) => {
-                    found.insert(id, (tree.app, pid));
-                    Shown::GameDir
-                }
-                (None, None) => {
-                    found.insert(id, (tree.app, tree.first.0));
-                    continue;
-                }
+                (Some(Shown::Executable), _) | (Some(Shown::GameDir), None) => (None, before),
+                (_, Some(pid)) => (Some(pid), Some(Shown::GameDir)),
+                // Not started yet: `reaper` stands in, and nothing is remembered.
+                (None, None) => (Some(tree.first), None),
             }
         };
-        match shown.get_mut(id) {
-            Some(s) => s.1 = now,
+        if let Some(pid) = pid {
+            found.insert(id, (tree.app, pid));
+        }
+        let Some(shown) = now else { continue };
+        match launches.get_mut(id) {
+            Some(l) => *l = KnownLaunch { procs: tree.procs, shown },
             None => {
-                shown.insert(id.to_owned(), (tree.first, now));
+                launches.insert(id.to_owned(), KnownLaunch { procs: tree.procs, shown });
             }
         }
     }
@@ -378,11 +385,7 @@ mod tests {
         scan(db, procs, &mut HashMap::new())
     }
 
-    fn scan(
-        db: &db::Db,
-        procs: &[scan::Proc],
-        shown: &mut HashMap<String, (LaunchKey, Shown)>,
-    ) -> Vec<(&'static str, u32)> {
+    fn scan(db: &db::Db, procs: &[scan::Proc], shown: &mut HashMap<String, KnownLaunch>) -> Vec<(&'static str, u32)> {
         let names = |id: &str| if id.starts_with("1529") { "Guildrun" } else { "Valheim" };
         running(db, procs, |l| (l.app == 4425970).then_some(3669200), shown)
             .into_iter()
@@ -496,5 +499,18 @@ mod tests {
         // A new launch whose `reaper` got a reused PID: its start time differs.
         assert_eq!(scan(&db, &proton, &mut shown), [("Valheim", 600)]);
         assert_eq!(scan(&db, &[reaper(500, 3), native(550)], &mut shown), [("Valheim", 550)]);
+    }
+
+    #[test]
+    fn a_launch_outlasts_its_first_process() {
+        // If `reaper` exits before the last of Wine's services, that is still
+        // the same launch: the exited game must not come back with a service
+        // standing in for it.
+        let (db, mut shown) = (db(), HashMap::new());
+        assert_eq!(scan(&db, &proton(3669200), &mut shown), [("Guildrun", 116913)]);
+        assert!(scan(&db, &proton_without_game(3669200), &mut shown).is_empty());
+        let services: Vec<_> =
+            proton_without_game(3669200).into_iter().filter(|p| !p.argv0.ends_with("/reaper")).collect();
+        assert!(scan(&db, &services, &mut shown).is_empty());
     }
 }

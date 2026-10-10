@@ -100,8 +100,12 @@ don't say.
   while no Discord client runs, so Valheim through Proton can end and its native
   build start without any scan in between. Keyed only by title, the old
   `Executable` hid the native game for its whole launch (Greptile on #20).
-  `LaunchKey` is the tree's first process, `reaper`: its PID and start ticks, so a
-  reused PID is a new launch too.
+  A launch is the same while any of its processes from the last scan remains
+  (`KnownLaunch`), compared by PID and start ticks so a reused PID is another
+  process. Keying it by its first process (`reaper`) instead would bring an exited
+  game back if `reaper` exits before the last of Wine's services, with a service
+  standing in (Greptile on #20, reproduced in a test; whether `reaper` ever exits
+  first is unchecked).
 - **Any process in the game's directory counts as the game**, so a crash handler
   there keeps a title shown as long as it runs. That is deliberate: a game may start
   through a bootstrap binary in its directory that hands over to another and exits,
