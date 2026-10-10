@@ -6,12 +6,16 @@ use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::steam;
+
 pub struct Proc {
     pub pid: u32,
     /// Wine/Proton set this to the Windows path (`C:\…\WoW.exe`); `/proc/<pid>/exe`
     /// would only name the wine preloader.
     pub argv0: String,
     pub args: Vec<String>,
+    /// Set when Steam launched this process or an ancestor.
+    pub steam: Option<steam::Launch>,
 }
 
 /// Every process owned by `uid` that has a command line (kernel threads don't).
@@ -23,7 +27,8 @@ pub fn processes(uid: u32) -> Vec<Proc> {
             if ent.metadata().ok()?.uid() != uid {
                 return None;
             }
-            let raw = fs::read(ent.path().join("cmdline")).ok()?;
+            let path = ent.path();
+            let raw = fs::read(path.join("cmdline")).ok()?;
             let mut it = raw.split(|&b| b == 0).map(|s| String::from_utf8_lossy(s).into_owned());
             let argv0 = it.next().filter(|s| !s.is_empty())?;
             let mut args: Vec<String> = it.collect();
@@ -31,7 +36,10 @@ pub fn processes(uid: u32) -> Vec<Proc> {
             if args.last().is_some_and(String::is_empty) {
                 args.pop();
             }
-            Some(Proc { pid, argv0, args })
+            // Some of the user's own are unreadable (systemd --user, ssh-agent):
+            // those just aren't Steam games.
+            let steam = fs::read(path.join("environ")).ok().and_then(|e| steam::Launch::from_environ(&e));
+            Some(Proc { pid, argv0, args, steam })
         })
         .collect()
 }

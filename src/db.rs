@@ -1,9 +1,9 @@
-//! Discord's detectable-applications list and the executable matcher.
+//! Discord's detectable-applications list and the matchers.
 //!
 //! The list is the same one Discord's own client uses for process-scan game
-//! detection. Matching follows arRPC's `src/process/index.js` so a title is
-//! detected here exactly when arRPC (Vesktop/Equibop's built-in detection)
-//! would detect it — with one deliberate difference, noted in [`candidates`].
+//! detection. Executable matching follows arRPC's `src/process/index.js`, with
+//! one deliberate difference, noted in [`candidates`]. Matching a Steam game by
+//! its app ID ([`Db::steam`]) goes beyond arRPC, which reads executables only.
 
 use std::collections::HashMap;
 use std::fs;
@@ -12,6 +12,8 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Deserializer, Serialize};
+
+use crate::steam;
 
 pub const DETECTABLE_URL: &str = "https://discord.com/api/v9/applications/detectable";
 
@@ -27,6 +29,17 @@ pub struct App {
     pub name: String,
     #[serde(default, deserialize_with = "null_as_empty")]
     pub executables: Vec<Executable>,
+    /// Store listings. [`trim`] keeps only Steam's, with clean numeric IDs.
+    #[serde(default, deserialize_with = "null_as_empty", skip_serializing_if = "Vec::is_empty")]
+    pub third_party_skus: Vec<Sku>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Sku {
+    /// Optional so a `null` can't fail the whole list; none was on 2026-10-10.
+    pub distributor: Option<String>,
+    /// The list has `null` IDs, and Steam IDs with a trailing tab or space.
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -48,13 +61,27 @@ where
     Ok(Option::<Vec<T>>::deserialize(d)?.unwrap_or_default())
 }
 
-/// Drop everything the matcher can never use: launcher entries (arRPC skips
-/// them) and macOS bundle names. Shrinks the cache from ~13 MB to ~1.5 MB.
+/// Drop everything the matchers can never use: launcher entries (arRPC skips
+/// them), macOS bundle names, and store IDs that aren't a Steam app ID. An app
+/// stays if it has an executable or a Steam ID. Shrinks the cache from ~13 MB
+/// to ~3.2 MB.
 fn trim(apps: Vec<App>) -> Vec<App> {
     apps.into_iter()
         .filter_map(|mut app| {
             app.executables.retain(|e| !e.is_launcher && e.os.as_deref() != Some("darwin") && !e.name.is_empty());
-            (!app.executables.is_empty()).then_some(app)
+            let mut steam: Vec<u32> = app
+                .third_party_skus
+                .iter()
+                .filter(|s| s.distributor.as_deref() == Some("steam"))
+                .filter_map(|s| steam::app_id(s.id.as_deref()?.trim()))
+                .collect();
+            steam.sort_unstable();
+            steam.dedup();
+            app.third_party_skus = steam
+                .into_iter()
+                .map(|id| Sku { distributor: Some("steam".into()), id: Some(id.to_string()) })
+                .collect();
+            (!app.executables.is_empty() || !app.third_party_skus.is_empty()).then_some(app)
         })
         .collect()
 }
@@ -69,12 +96,14 @@ struct Entry {
 pub struct Db {
     apps: Vec<App>,
     by_name: HashMap<String, Vec<Entry>>,
+    by_steam: HashMap<u32, u32>,
 }
 
 impl Db {
     pub fn new(apps: Vec<App>) -> Db {
         let apps = trim(apps);
         let mut by_name: HashMap<String, Vec<Entry>> = HashMap::new();
+        let mut by_steam: HashMap<u32, u32> = HashMap::new();
         for (ai, app) in apps.iter().enumerate() {
             for (ei, exe) in app.executables.iter().enumerate() {
                 let (key, exact) = match exe.name.strip_prefix('>') {
@@ -83,8 +112,13 @@ impl Db {
                 };
                 by_name.entry(key.to_owned()).or_default().push(Entry { app: ai as u32, exe: ei as u32, exact });
             }
+            // `trim` left only Steam IDs. No two apps shared one on 2026-10-10;
+            // should that change, the first keeps it.
+            for id in app.third_party_skus.iter().filter_map(|s| s.id.as_deref()?.parse().ok()) {
+                by_steam.entry(id).or_insert(ai as u32);
+            }
         }
-        Db { apps, by_name }
+        Db { apps, by_name, by_steam }
     }
 
     pub fn len(&self) -> usize {
@@ -117,6 +151,11 @@ impl Db {
             }
         }
         hits.into_iter().map(|i| &self.apps[i as usize]).collect()
+    }
+
+    /// The app whose Steam store listing is `app`.
+    pub fn steam(&self, app: u32) -> Option<&App> {
+        self.by_steam.get(&app).map(|&i| &self.apps[i as usize])
     }
 }
 
@@ -243,28 +282,16 @@ mod tests {
         Executable { name: name.into(), os: Some("win32".into()), is_launcher: false, arguments: None }
     }
 
+    fn app(id: &str, name: &str, executables: Vec<Executable>) -> App {
+        App { id: id.into(), name: name.into(), executables, third_party_skus: Vec::new() }
+    }
+
     fn db() -> Db {
         Db::new(vec![
-            App {
-                id: "356875762940379136".into(),
-                name: "World of Warcraft".into(),
-                executables: vec![exe("_retail_/wow.exe"), exe("_retail_/wow-64.exe")],
-            },
-            App {
-                id: "1".into(),
-                name: "Garry's Mod".into(),
-                executables: vec![Executable { arguments: Some("-game garrysmod".into()), ..exe(">hl2.exe") }],
-            },
-            App {
-                id: "2".into(),
-                name: "Some Launcher".into(),
-                executables: vec![Executable { is_launcher: true, ..exe("launcher.exe") }],
-            },
-            App {
-                id: "3".into(),
-                name: "Mac Only".into(),
-                executables: vec![Executable { os: Some("darwin".into()), ..exe("mac.app") }],
-            },
+            app("356875762940379136", "World of Warcraft", vec![exe("_retail_/wow.exe"), exe("_retail_/wow-64.exe")]),
+            app("1", "Garry's Mod", vec![Executable { arguments: Some("-game garrysmod".into()), ..exe(">hl2.exe") }]),
+            app("2", "Some Launcher", vec![Executable { is_launcher: true, ..exe("launcher.exe") }]),
+            app("3", "Mac Only", vec![Executable { os: Some("darwin".into()), ..exe("mac.app") }]),
         ])
     }
 
@@ -304,7 +331,7 @@ mod tests {
 
     #[test]
     fn bare_name_still_matches() {
-        let db = Db::new(vec![App { id: "9".into(), name: "Bare".into(), executables: vec![exe("game.exe")] }]);
+        let db = Db::new(vec![app("9", "Bare", vec![exe("game.exe")])]);
         assert_eq!(ids(db.matches("game.exe", &[])), ["9"]);
     }
 
@@ -314,5 +341,41 @@ mod tests {
         assert_eq!(c[0], "game64.x64");
         assert!(c.contains(&"game.x64".to_string()));
         assert!(c.contains(&"game64".to_string()));
+    }
+
+    /// Entries shaped as the API serves them.
+    fn from_api(json: &str) -> Db {
+        Db::new(serde_json::from_str(json).unwrap())
+    }
+
+    #[test]
+    fn apps_with_only_a_steam_id_are_kept_and_found_by_it() {
+        let db = from_api(
+            r#"[
+            {"id": "1529337689047044147", "name": "Guildrun", "executables": [],
+             "third_party_skus": [{"distributor": "steam", "id": "3669200"}]},
+            {"id": "5", "name": "GOG only", "executables": null,
+             "third_party_skus": [{"distributor": "gog", "id": "123"}]},
+            {"id": "6", "name": "No SKUs", "executables": []}
+        ]"#,
+        );
+        assert_eq!(db.len(), 1);
+        assert_eq!(db.steam(3669200).map(|a| a.name.as_str()), Some("Guildrun"));
+        assert!(db.steam(123).is_none());
+    }
+
+    #[test]
+    fn steam_ids_are_cleaned_and_junk_dropped() {
+        let db = from_api(
+            r#"[
+            {"id": "1", "name": "Rayman Origins", "executables": [],
+             "third_party_skus": [{"distributor": "steam", "id": "207490"}, {"distributor": "steam", "id": "207490\t"}]},
+            {"id": "2", "name": "Junk", "executables": [],
+             "third_party_skus": [{"distributor": "steam", "id": "$6.99"}, {"distributor": "steam", "id": null}]}
+        ]"#,
+        );
+        assert_eq!(db.len(), 1);
+        assert_eq!(db.apps[0].third_party_skus.len(), 1);
+        assert_eq!(db.steam(207490).map(|a| a.id.as_str()), Some("1"));
     }
 }

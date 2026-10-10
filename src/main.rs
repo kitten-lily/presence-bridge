@@ -10,6 +10,7 @@
 mod db;
 mod ipc;
 mod scan;
+mod steam;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -59,37 +60,77 @@ fn parse_args() -> Result<Opts, String> {
     Ok(o)
 }
 
-/// One running game: the lowest matching PID stands for the whole title.
+/// One running game, and the process that stands for the whole title.
 struct Game {
     name: String,
     pid: u32,
     start_ms: Option<u64>,
 }
 
-fn detect(db: &db::Db, uid: u32, boot: Option<SystemTime>) -> BTreeMap<String, Game> {
-    let mut games: BTreeMap<String, Game> = BTreeMap::new();
-    for p in scan::processes(uid) {
+fn detect(db: &db::Db, uid: u32, boot: Option<SystemTime>, demos: &mut steam::Demos) -> BTreeMap<String, Game> {
+    let procs = scan::processes(uid);
+    let full_game = |l: &steam::Launch| demos.full_game(l.client.as_deref()?, l.app);
+    running(db, &procs, full_game)
+        .into_iter()
+        .map(|(id, (app, pid))| {
+            let start_ms = boot.and_then(|b| scan::start_ms(pid, b));
+            (id.to_owned(), Game { name: app.name.clone(), pid, start_ms })
+        })
+        .collect()
+}
+
+/// Each running title by Discord app ID, with the PID that stands for it.
+///
+/// An executable match is the game binary itself, so it wins; the lowest PID
+/// stands for the title. A Steam match covers the whole launch tree: the game
+/// is the lowest PID running from the game's own directory. Failing that, the
+/// lowest PID, Steam's `reaper` wrapper, which started before the game.
+/// `full_game` maps a demo's app ID to its full game's.
+fn running<'a>(
+    db: &'a db::Db,
+    procs: &[scan::Proc],
+    mut full_game: impl FnMut(&steam::Launch) -> Option<u32>,
+) -> BTreeMap<&'a str, (&'a db::App, u32)> {
+    let mut found: BTreeMap<&str, (&db::App, u32)> = BTreeMap::new();
+    for p in procs {
         for app in db.matches(&p.argv0, &p.args) {
-            let keep = games.get(&app.id).is_none_or(|g| p.pid < g.pid);
-            if keep {
-                let start_ms = boot.and_then(|b| scan::start_ms(p.pid, b));
-                games.insert(app.id.clone(), Game { name: app.name.clone(), pid: p.pid, start_ms });
-            }
+            let hit = found.entry(&app.id).or_insert((app, p.pid));
+            hit.1 = hit.1.min(p.pid);
         }
     }
-    games
+    // Per title: the lowest PID in the game's directory, and the lowest at all.
+    let mut steam: BTreeMap<&str, (&db::App, Option<u32>, u32)> = BTreeMap::new();
+    for p in procs {
+        let Some(launch) = &p.steam else { continue };
+        let Some(app) = db.steam(launch.app).or_else(|| db.steam(full_game(launch)?)) else { continue };
+        if found.contains_key(app.id.as_str()) {
+            continue;
+        }
+        let game = launch.runs_game(&p.argv0).then_some(p.pid);
+        let hit = steam.entry(&app.id).or_insert((app, game, p.pid));
+        hit.1 = match (hit.1, game) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        hit.2 = hit.2.min(p.pid);
+    }
+    found.extend(steam.into_iter().map(|(id, (app, game, lowest))| (id, (app, game.unwrap_or(lowest)))));
+    found
 }
 
 fn cache_path() -> PathBuf {
+    // `-v2`: from Steam matching on, the cache keeps Steam IDs. An older cache
+    // has none, and would be trusted for up to a day under the old name.
+    const FILE: &str = "detectable-v2.json";
     // systemd's CacheDirectory= sets this; otherwise follow XDG.
     if let Some(d) = std::env::var_os("CACHE_DIRECTORY") {
-        return PathBuf::from(d).join("detectable.json");
+        return PathBuf::from(d).join(FILE);
     }
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .unwrap_or_else(|| PathBuf::from("/tmp"));
-    base.join("presence-bridge/detectable.json")
+    base.join("presence-bridge").join(FILE)
 }
 
 fn main() -> ExitCode {
@@ -109,10 +150,16 @@ fn main() -> ExitCode {
     };
     let source = match &opts.db {
         Some(f) => db::Source::fixed(f.clone()),
-        None => db::Source::cached(cache_path(), MAX_AGE),
+        None => {
+            let cache = cache_path();
+            // The cache from before Steam matching (see `cache_path`).
+            let _ = std::fs::remove_file(cache.with_file_name("detectable.json"));
+            db::Source::cached(cache, MAX_AGE)
+        }
     };
     let uid = scan::own_uid();
     let boot = scan::boot_time();
+    let mut demos = steam::Demos::default();
 
     if opts.once {
         let Some(db) = source.load() else { return ExitCode::from(1) };
@@ -121,7 +168,7 @@ fn main() -> ExitCode {
             let paths: Vec<_> = c.paths.iter().map(|p| p.display().to_string()).collect();
             println!("client {}: {}", c.key, paths.join(", "));
         }
-        for (id, g) in detect(&db, uid, boot) {
+        for (id, g) in detect(&db, uid, boot, &mut demos) {
             println!("game {} ({id}) pid {} start {:?}", g.name, g.pid, g.start_ms);
         }
         return ExitCode::SUCCESS;
@@ -167,7 +214,7 @@ fn main() -> ExitCode {
             continue;
         };
 
-        let games = detect(db, uid, boot);
+        let games = detect(db, uid, boot, &mut demos);
         let client_keys: HashSet<&str> = clients.iter().map(|c| c.key.as_str()).collect();
 
         sessions.retain(|(app, key), s| {
@@ -228,5 +275,101 @@ fn main() -> ExitCode {
         }
 
         std::thread::sleep(opts.interval);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db() -> db::Db {
+        db::Db::new(
+            serde_json::from_str(
+                r#"[
+                {"id": "1529337689047044147", "name": "Guildrun", "executables": [],
+                 "third_party_skus": [{"distributor": "steam", "id": "3669200"}]},
+                {"id": "1124358970618953818", "name": "Valheim",
+                 "executables": [{"name": "valheim/valheim.exe", "os": "win32"}],
+                 "third_party_skus": [{"distributor": "steam", "id": "892970"}]}
+            ]"#,
+            )
+            .unwrap(),
+        )
+    }
+
+    fn proc(pid: u32, argv0: &str, app: Option<(u32, &str)>) -> scan::Proc {
+        let steam = app.map(|(app, dir)| steam::Launch { app, install_dir: Some(dir.into()), client: None });
+        scan::Proc { pid, argv0: argv0.into(), args: Vec::new(), steam }
+    }
+
+    fn pids(db: &db::Db, procs: &[scan::Proc]) -> Vec<(&'static str, u32)> {
+        let names = |id: &str| if id.starts_with("1529") { "Guildrun" } else { "Valheim" };
+        running(db, procs, |l| (l.app == 4425970).then_some(3669200))
+            .into_iter()
+            .map(|(id, (_, p))| (names(id), p))
+            .collect()
+    }
+
+    /// Guildrun's launch tree under Proton, as seen on 2026-10-10 (scan order is
+    /// not PID order).
+    fn proton(app: u32) -> Vec<scan::Proc> {
+        let tag = Some((app, "guildrun demo"));
+        vec![
+            proc(116913, r"S:\common\Guildrun Demo\Guildrun.exe", tag),
+            proc(116703, "/s/Steam/ubuntu12_32/reaper", tag),
+            proc(
+                116704,
+                "/s/steamapps/common/SteamLinuxRuntime_4/pressure-vessel/bin/steam-runtime-launch-client",
+                tag,
+            ),
+            proc(116792, "python3", tag),
+            proc(116807, r"C:\windows\system32\services.exe", tag),
+            proc(116906, r"c:\windows\system32\discord\bridge.exe", tag),
+            proc(116917, r"S:\common\Guildrun Demo\UnityCrashHandler64.exe", tag),
+            proc(1000, "/usr/bin/bash", None),
+        ]
+    }
+
+    #[test]
+    fn steam_tree_is_represented_by_the_game_not_the_launcher() {
+        let db = db();
+        assert_eq!(pids(&db, &proton(3669200)), [("Guildrun", 116913)]);
+        let tag = Some((892970, "valheim"));
+        let native = [
+            proc(116324, "/s/steamapps/common/Valheim/valheim.x86_64", tag),
+            proc(116246, "/s/Steam/ubuntu12_32/reaper", tag),
+            proc(116248, "/s/steamapps/common/SteamLinuxRuntime_soldier/pressure-vessel/bin/launch-client", tag),
+            proc(116299, "/usr/lib/pressure-vessel/from-host/libexec/steam-runtime-tools-0/pv-adverb", tag),
+        ];
+        assert_eq!(pids(&db, &native), [("Valheim", 116324)]);
+    }
+
+    #[test]
+    fn before_the_game_starts_the_wrapper_stands_in() {
+        let tree: Vec<_> = proton(3669200).into_iter().filter(|p| !p.argv0.starts_with("S:")).collect();
+        assert_eq!(pids(&db(), &tree), [("Guildrun", 116703)]);
+    }
+
+    #[test]
+    fn a_demo_shows_as_its_full_game() {
+        assert_eq!(pids(&db(), &proton(4425970)), [("Guildrun", 116913)]);
+    }
+
+    #[test]
+    fn ids_not_on_the_list_match_nothing() {
+        assert!(pids(&db(), &proton(1)).is_empty());
+    }
+
+    #[test]
+    fn a_title_matched_both_ways_counts_once_with_the_executables_pid() {
+        // Valheim on Proton: its `valheim.exe` matches by name, and the whole
+        // tree, `reaper` included, carries its Steam ID.
+        let tag = Some((892970, "valheim"));
+        let procs = [
+            proc(500, "/s/Steam/ubuntu12_32/reaper", tag),
+            proc(600, r"S:\common\Valheim\valheim.exe", tag),
+            proc(700, r"S:\common\Valheim\UnityCrashHandler64.exe", tag),
+        ];
+        assert_eq!(pids(&db(), &procs), [("Valheim", 600)]);
     }
 }

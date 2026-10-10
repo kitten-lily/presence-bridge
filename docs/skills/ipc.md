@@ -78,9 +78,11 @@ This file covers what a host-side client of those sockets needs to know.
 |---|---|
 | `find $XDG_RUNTIME_DIR -name 'discord-ipc-*'` finds nothing | `find` silently misses these; `ls` or `stat` the specific paths |
 | grep for `discord-ipc-0` in a client binary finds nothing | the digit is appended at runtime; search for `/discord-ipc-` |
+| `--once` lists `client com.discordapp.Discord`, but the service logs `Connection refused (os error 111)` | Discord isn't running: its socket outlives it. On 2026-10-10, `.flatpak/com.discordapp.Discord/xdg-run/discord-ipc-0` was still there with no Discord process (`pgrep -af discord`). Start Discord; the bridge retries each scan |
 
-Both are from krytis's 2026-08-14 diagnosis (starlit-os/krytis#591, #595). They moved
-here from krytis `bst.md` on 2026-10-09; krytis keeps the sandbox-side trap.
+The first two are from krytis's 2026-08-14 diagnosis (starlit-os/krytis#591, #595).
+They moved here from krytis `bst.md` on 2026-10-09; krytis keeps the sandbox-side
+trap.
 
 ## Testing against a fake server
 

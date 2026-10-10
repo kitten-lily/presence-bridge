@@ -10,7 +10,7 @@ Load only the file for your current task. Writing a lesson back:
 | Write or fix a test against the fake IPC server in `src/ipc.rs` | [`docs/skills/ipc.md`](skills/ipc.md) § Testing against a fake server |
 | Change matching, or find out why a running game isn't detected | [`docs/skills/detection.md`](skills/detection.md) § Matching |
 | Change how the detectable list is fetched or cached | [`docs/skills/detection.md`](skills/detection.md) § The detectable list |
-| Match Steam games by app ID, or read a game's `SteamAppId` (#8) | [`docs/skills/detection.md`](skills/detection.md) § Steam's environment |
+| Change Steam app ID matching, which PID stands for a Steam game, or demo resolution | [`docs/skills/detection.md`](skills/detection.md) § Steam's environment |
 | Check a title live, or smoke-test without launching a game | [`docs/skills/detection.md`](skills/detection.md) § Checking a title live |
 | Explain an activity that clears late after quitting a game | [`docs/skills/detection.md`](skills/detection.md) § Game processes |
 | Add or change a tool pin, or bump Rust | [`docs/skills/mise.md`](skills/mise.md) § The Rust pin, § Tool declarations |
