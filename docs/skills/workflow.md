@@ -52,6 +52,25 @@ badges.
 - After pushing the fixes, ask for a re-review with a PR comment that says only
   `@greptileai`: `gh pr comment <n> --body @greptileai`.
 
+### Renovate PRs get no review
+
+`.greptile/config.json` sets `excludeAuthors: ["renovate[bot]"]`. Greptile reviews
+every new PR by default, and a dependency bump gives it little to review. Two things
+about the file:
+
+- **Greptile reads it from the PR's source branch**
+  ([greptile.json reference](https://www.greptile.com/docs/code-review/greptile-json-reference)),
+  and Renovate cuts its branches from `main`, so the exclusion works only once it is
+  on `main`.
+- **Greptile's docs disagree on whether it works in a file.** The
+  [`.greptile/` reference](https://www.greptile.com/docs/code-review/greptile-config-reference)
+  lists `excludeAuthors`. Its
+  [troubleshooting page](https://www.greptile.com/docs/code-review/controlling-nitpickiness)
+  says author exclusion is "dashboard-only, not available in greptile.json"
+  (both as of 2026-10-10). So exclude `renovate[bot]` in the dashboard too (Code
+  Review Settings > Greptile Comments > Authors > Exclude). The dashboard isn't in the
+  repo, so check it there when a Renovate PR still gets a review.
+
 ## Merging
 
 Merge with a **merge commit**, never squash or rebase. A krytis commit that pairs
