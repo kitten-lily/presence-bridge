@@ -21,9 +21,9 @@
   "osvVulnerabilityAlerts": true,
   "customManagers": [
     {
-      // The mise version CI installs. The github-actions manager in Renovate
-      // 44.149.1 doesn't extract this input (no uses-with dep); krytis saw an
-      // older release extract it and then drop the update under pinDigests:
+      // The mise version CI installs. The hosted app's github-actions manager
+      // extracts this input and then drops the update under pinDigests, as in
+      // krytis (Dependency Dashboard #18):
       // docs/skills/renovate.md § Silent drops under pinDigests.
       // The comment above the pin anchors the match.
       "customType": "regex",
