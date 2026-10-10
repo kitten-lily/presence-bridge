@@ -3,10 +3,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
-  // An allowlist. A custom manager added later is silently skipped unless
-  // "custom.regex" is listed here too. github-actions finds nothing until a
-  // workflow lands, and says so in the log.
-  "enabledManagers": ["cargo", "mise", "github-actions"],
+  // An allowlist. A custom manager is silently skipped unless "custom.regex"
+  // is listed too.
+  "enabledManagers": ["cargo", "mise", "github-actions", "custom.regex"],
   "baseBranchPatterns": ["main"],
   "pinDigests": true,
   // Commits are made through the GitHub API, which signs them (verified).
@@ -20,6 +19,25 @@
   // too, and also flag Cargo.lock's transitive crates:
   // docs/skills/renovate.md § Vulnerability alerts.
   "osvVulnerabilityAlerts": true,
+  "customManagers": [
+    {
+      // The mise version CI installs. The github-actions manager in Renovate
+      // 44.149.1 doesn't extract this input (no uses-with dep); krytis saw an
+      // older release extract it and then drop the update under pinDigests:
+      // docs/skills/renovate.md § Silent drops under pinDigests.
+      // The comment above the pin anchors the match.
+      "customType": "regex",
+      "description": "mise version pinned on jdx/mise-action steps",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=jdx/mise\\s+version: (?<currentValue>[0-9][^\\s]*)",
+      ],
+      "depNameTemplate": "jdx/mise",
+      "datasourceTemplate": "github-releases",
+      // Releases are tagged v2026.10.3; the pin holds the bare version.
+      "extractVersionTemplate": "^v(?<version>.+)$",
+    },
+  ],
   "packageRules": [
     {
       "matchUpdateTypes": ["digest", "pin", "patch", "minor"],
@@ -50,6 +68,12 @@
       // These auto-merge unattended, so a hijacked release should not
       // land within hours of being published.
       "matchManagers": ["cargo", "mise"],
+      "minimumReleaseAge": "1 day",
+    },
+    {
+      // The same wait for the mise binary CI installs. Matchers in one rule
+      // are ANDed, so this can't join the matchManagers rule above.
+      "matchDepNames": ["jdx/mise"],
       "minimumReleaseAge": "1 day",
     },
     {
