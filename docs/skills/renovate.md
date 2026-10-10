@@ -158,6 +158,15 @@ token` for GitHub lookups when `gh` is installed, and runs rate-limited without 
   per manager, and a lock file maintenance row for managers that support it. *(here)*
   The helper is a heredoc inside `mise/tasks/renovate-check`, not a separate script,
   because AGENTS.md § Tasks and verification allows none outside `mise/tasks/`.
+- **`--explain` fails on a rule it can't exercise** *(here, from Greptile on #10)*.
+  Its sample packages carry only a manager, a name, a depType and an update type. A
+  rule matching on anything else (`matchDatasources`, `matchFileNames`, …), on a name
+  pattern (`/regex/`, `!name`, globs), or on another update type never fires. The
+  rows it should change then still read `AUTO`: with a temporary
+  `{ "matchDatasources": ["github-releases"], "enabled": false }`, which turns off
+  `usage`, mise's fall-through row still showed `AUTO`. Such a rule now makes the run
+  list it under `The table ignores these rules` and exit 1. Extend the samples
+  before relying on the table.
 - **The dry-run reads the working tree**, config included, so an uncommitted edit
   takes effect. Restore simulations with `git restore`.
 

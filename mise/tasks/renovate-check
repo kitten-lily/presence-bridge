@@ -58,6 +58,22 @@ const managers = config.enabledManagers;
 const rules = config.packageRules ?? [];
 const updateTypes = ['digest', 'pin', 'patch', 'minor', 'major'];
 
+// A subject carries only a manager, a name, a depType and an update type, so a
+// rule matching on anything else (matchDatasources, matchFileNames, …), on a
+// name pattern, or on another update type is never exercised, and the rows it
+// should change would still read AUTO. Such a rule fails the run instead.
+const probed = new Set(['matchManagers', 'matchPackageNames', 'matchDepNames', 'matchDepTypes', 'matchUpdateTypes']);
+const isPattern = (name) => /^[!/]|[*?{]/.test(name);
+const unprobed = [];
+rules.forEach((rule, i) => {
+  const why = [
+    ...Object.keys(rule).filter((k) => k.startsWith('match') && !probed.has(k)),
+    ...[...(rule.matchPackageNames ?? []), ...(rule.matchDepNames ?? [])].filter(isPattern).map((n) => `pattern ${n}`),
+    ...(rule.matchUpdateTypes ?? []).filter((t) => ![...updateTypes, 'lockFileMaintenance'].includes(t)).map((t) => `update type ${t}`),
+  ];
+  if (why.length) unprobed.push(`packageRules[${i}]: ${why.join(', ')}`);
+});
+
 // Subjects come from the config: every name and depType a rule matches on,
 // under every manager the rule can apply to, plus one fall-through name per
 // manager that no rule names.
@@ -98,6 +114,12 @@ for (const manager of managers) {
   const lfm = { ...config, ...config.lockFileMaintenance, manager, updateType: 'lockFileMaintenance' };
   const r = await applyPackageRules(lfm, 'lookup');
   console.log(`    ${'(lock file maintenance)'.padEnd(width)}  lockFileMaintenance=${verdict(r)}`);
+}
+if (unprobed.length) {
+  console.error('\n==> The table ignores these rules, so rows they change are wrong:');
+  for (const line of unprobed) console.error(`    ${line}`);
+  console.error('    Extend the subjects in mise/tasks/renovate-check to cover them.');
+  process.exitCode = 1;
 }
 EOF
 fi
