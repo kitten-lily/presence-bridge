@@ -66,9 +66,15 @@ How a stack differs from PRs that merely target each other's branches:
   whole stack at once. The layers above retarget `main` by themselves.
 - **CI** runs for every PR in the stack, but each run reads the workflow from that
   PR's own branch. #10 sat below the layer that added `checks.yml` and got no CI run.
-- **A fix and its lesson go in the same layer.** If the skill file is created in a
-  higher layer, move its creation down: commit in the lower layer's worktree, then run
-  `gh stack rebase --upstack` and resolve the higher layer's copy.
+- **A fix and its lesson go in the same commit**, not just the same layer
+  (AGENTS.md § Same-commit rule). If the skill file is created only in a higher layer,
+  fold the lesson into the fix's commit in the lower layer's worktree. `git commit
+  --amend` reaches only the layer's tip, so use `git commit --fixup=<fix-sha>`, then
+  `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <branch below>`. Then run
+  `gh stack rebase --upstack`, resolve the add/add conflict on the higher layer's copy
+  of the file, and `gh stack push`. Folding rewrites the fix's SHA, so if krytis
+  already cites it, update the citing commit too (AGENTS.md § The Self-Improvement
+  Loop).
 
 ## Review: Greptile
 
