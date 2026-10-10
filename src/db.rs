@@ -191,23 +191,33 @@ pub fn candidates(argv0: &str) -> Vec<String> {
 #[derive(Clone)]
 pub struct Source {
     cache: std::path::PathBuf,
+    /// A cache in an older format, without Steam IDs: read only when offline with
+    /// no current cache, and deleted once a fetch has replaced it.
+    legacy: Option<std::path::PathBuf>,
     max_age: Duration,
     /// `--db <file>`: never fetch, never write.
     fixed: bool,
 }
 
+type Fetched = Result<Vec<App>, Box<dyn std::error::Error>>;
+
 impl Source {
-    pub fn cached(cache: std::path::PathBuf, max_age: Duration) -> Source {
-        Source { cache, max_age, fixed: false }
+    pub fn cached(cache: std::path::PathBuf, legacy: std::path::PathBuf, max_age: Duration) -> Source {
+        Source { cache, legacy: Some(legacy), max_age, fixed: false }
     }
 
     pub fn fixed(file: std::path::PathBuf) -> Source {
-        Source { cache: file, max_age: Duration::MAX, fixed: true }
+        Source { cache: file, legacy: None, max_age: Duration::MAX, fixed: true }
     }
 
     /// Fresh cache → cache. Stale or missing → fetch, falling back to a stale
-    /// cache when offline. `None` only when there is no list at all.
+    /// cache, then the legacy one, when offline. `None` only when there is no
+    /// list at all.
     pub fn load(&self) -> Option<Db> {
+        self.load_with(fetch)
+    }
+
+    fn load_with(&self, fetch: impl FnOnce() -> Fetched) -> Option<Db> {
         if self.fixed {
             return read_file(&self.cache).map_err(|e| eprintln!("cannot read {}: {e}", self.cache.display())).ok();
         }
@@ -224,15 +234,20 @@ impl Source {
         match fetch() {
             Ok(apps) => {
                 let apps = trim(apps);
-                if let Err(e) = write_file(&self.cache, &apps) {
-                    eprintln!("cannot write cache {}: {e}", self.cache.display());
+                match write_file(&self.cache, &apps) {
+                    Ok(()) => {
+                        if let Some(legacy) = &self.legacy {
+                            let _ = fs::remove_file(legacy);
+                        }
+                    }
+                    Err(e) => eprintln!("cannot write cache {}: {e}", self.cache.display()),
                 }
                 eprintln!("fetched detectable list: {} apps", apps.len());
                 Some(Db::new(apps))
             }
             Err(e) => {
                 eprintln!("cannot fetch {DETECTABLE_URL}: {e}");
-                read_file(&self.cache).ok()
+                read_file(&self.cache).ok().or_else(|| read_file(self.legacy.as_deref()?).ok())
             }
         }
     }
@@ -247,7 +262,7 @@ impl Source {
     }
 }
 
-fn fetch() -> Result<Vec<App>, Box<dyn std::error::Error>> {
+fn fetch() -> Fetched {
     let body = ureq::get(DETECTABLE_URL)
         .config()
         .timeout_global(Some(FETCH_TIMEOUT))
@@ -377,5 +392,26 @@ mod tests {
         assert_eq!(db.len(), 1);
         assert_eq!(db.apps[0].third_party_skus.len(), 1);
         assert_eq!(db.steam(207490).map(|a| a.id.as_str()), Some("1"));
+    }
+
+    #[test]
+    fn the_old_cache_serves_offline_until_a_fetch_replaces_it() {
+        let d = crate::testutil::tempdir("legacy-cache");
+        let (cache, legacy) = (d.join("detectable-v2.json"), d.join("detectable.json"));
+        write_file(&legacy, &[app("9", "Bare", vec![exe("game.exe")])]).unwrap();
+        let src = Source::cached(cache.clone(), legacy.clone(), Duration::from_secs(3600));
+
+        // First start after the upgrade, offline: executable matching keeps working.
+        let db = src.load_with(|| Err("offline".into())).expect("the old cache is the fallback");
+        assert_eq!(ids(db.matches("game.exe", &[])), ["9"]);
+        assert!(legacy.exists());
+
+        // Online: the old cache, though fresh, is not trusted; the fetch replaces it.
+        let steam = Sku { distributor: Some("steam".into()), id: Some("5".into()) };
+        let fetched = vec![App { third_party_skus: vec![steam], ..app("8", "New", Vec::new()) }];
+        let db = src.load_with(|| Ok(fetched)).unwrap();
+        assert!(db.steam(5).is_some());
+        assert!(cache.exists() && !legacy.exists());
+        let _ = fs::remove_dir_all(d);
     }
 }

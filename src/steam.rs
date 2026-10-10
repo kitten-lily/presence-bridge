@@ -5,7 +5,9 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
+use std::io::{self, Read};
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -81,7 +83,7 @@ pub struct Demos {
 struct AppInfo {
     client: PathBuf,
     path: PathBuf,
-    /// The mtime `parents` was read at; `None` before the first read.
+    /// The mtime `parents` was read at; `None` until a read succeeds.
     mtime: Option<SystemTime>,
 }
 
@@ -95,12 +97,35 @@ impl Demos {
         }
         let file = self.file.as_mut()?;
         let mtime = fs::metadata(&file.path).and_then(|m| m.modified()).ok()?;
-        if file.mtime != Some(mtime) {
-            self.parents = fs::read(&file.path).map(|b| demo_parents(&b)).unwrap_or_default();
+        // A failed read keeps the last map and is retried on the next call.
+        if file.mtime != Some(mtime)
+            && let Ok(b) = read_appinfo(&file.path)
+        {
+            self.parents = demo_parents(&b);
             file.mtime = Some(mtime);
         }
         self.parents.get(&app).copied()
     }
+}
+
+/// Steam's was 4 MB on 2026-10-10; a file far larger isn't one.
+const MAX_APPINFO: u64 = 256 << 20;
+
+/// Reads an `appinfo.vdf`, which must be a regular file. Its directory comes
+/// from a process's environment, which any process of the user's can set, so a
+/// FIFO there must not block the scan: open without blocking, then check.
+fn read_appinfo(path: &Path) -> io::Result<Vec<u8>> {
+    // Linux's O_NONBLOCK on x86_64 and aarch64, the targets `scan::start_ms`
+    // already assumes. Reads from a regular file ignore it.
+    const O_NONBLOCK: i32 = 0o4000;
+    let file = fs::OpenOptions::new().read(true).custom_flags(O_NONBLOCK).open(path)?;
+    let meta = file.metadata()?;
+    if !meta.is_file() || meta.len() > MAX_APPINFO {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "not a regular file of appinfo.vdf's size"));
+    }
+    let mut buf = Vec::with_capacity(meta.len() as usize);
+    file.take(MAX_APPINFO).read_to_end(&mut buf)?;
+    Ok(buf)
 }
 
 const V28: u32 = 0x0756_4428;
@@ -396,5 +421,34 @@ mod tests {
         let file = sample(true);
         assert!(demo_parents(&file[..file.len() - 3]).is_empty());
         assert!(demo_parents(&[0x27, 0x44, 0x56, 0x07, 0, 0, 0, 0]).is_empty());
+    }
+
+    #[test]
+    fn a_fifo_in_place_of_appinfo_does_not_block() {
+        let d = crate::testutil::tempdir("appinfo-fifo");
+        fs::create_dir_all(d.join("appcache")).unwrap();
+        let made = std::process::Command::new("mkfifo").arg(d.join("appcache/appinfo.vdf")).status().unwrap();
+        assert!(made.success());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let client = d.clone();
+        std::thread::spawn(move || tx.send(Demos::default().full_game(&client, 4425970)).unwrap());
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)), Ok(None));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn a_failed_read_is_retried_though_the_mtime_is_unchanged() {
+        let d = crate::testutil::tempdir("appinfo-retry");
+        let path = d.join("appcache/appinfo.vdf");
+        // A directory where the file should be: the read fails.
+        fs::create_dir_all(&path).unwrap();
+        let mtime = fs::metadata(&path).unwrap().modified().unwrap();
+        let mut demos = Demos::default();
+        assert_eq!(demos.full_game(&d, 4425970), None);
+        fs::remove_dir(&path).unwrap();
+        fs::write(&path, sample(true)).unwrap();
+        fs::File::options().write(true).open(&path).unwrap().set_modified(mtime).unwrap();
+        assert_eq!(demos.full_game(&d, 4425970), Some(3669200));
+        let _ = fs::remove_dir_all(d);
     }
 }

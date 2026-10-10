@@ -11,6 +11,19 @@ mod db;
 mod ipc;
 mod scan;
 mod steam;
+#[cfg(test)]
+mod testutil {
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// An empty directory for one test, named by its tag and the test process.
+    pub fn tempdir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("presence-bridge-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+}
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -67,10 +80,25 @@ struct Game {
     start_ms: Option<u64>,
 }
 
-fn detect(db: &db::Db, uid: u32, boot: Option<SystemTime>, demos: &mut steam::Demos) -> BTreeMap<String, Game> {
+/// What detection keeps between scans about Steam launches.
+#[derive(Default)]
+struct SteamState {
+    demos: steam::Demos,
+    shown: HashMap<String, Shown>,
+}
+
+/// What has stood for a title during its current Steam launch.
+#[derive(Clone, Copy, PartialEq)]
+enum Shown {
+    Executable,
+    GameDir,
+}
+
+fn detect(db: &db::Db, uid: u32, boot: Option<SystemTime>, state: &mut SteamState) -> BTreeMap<String, Game> {
     let procs = scan::processes(uid);
+    let demos = &mut state.demos;
     let full_game = |l: &steam::Launch| demos.full_game(l.client.as_deref()?, l.app);
-    running(db, &procs, full_game)
+    running(db, &procs, full_game, &mut state.shown)
         .into_iter()
         .map(|(id, (app, pid))| {
             let start_ms = boot.and_then(|b| scan::start_ms(pid, b));
@@ -83,13 +111,19 @@ fn detect(db: &db::Db, uid: u32, boot: Option<SystemTime>, demos: &mut steam::De
 ///
 /// An executable match is the game binary itself, so it wins; the lowest PID
 /// stands for the title. A Steam match covers the whole launch tree: the game
-/// is the lowest PID running from the game's own directory. Failing that, the
-/// lowest PID, Steam's `reaper` wrapper, which started before the game.
-/// `full_game` maps a demo's app ID to its full game's.
+/// is the lowest PID running from the game's own directory. Until one does,
+/// the lowest PID, Steam's `reaper` wrapper, stands in.
+///
+/// Wine's services, `reaper` and crash handlers can outlive the game, so
+/// `shown` remembers, per title, what stood for it during the current launch:
+/// once the executable match or the game has exited, the rest of the tree
+/// doesn't keep the title shown. A title is forgotten when no process of its
+/// launch tree remains. `full_game` maps a demo's app ID to its full game's.
 fn running<'a>(
     db: &'a db::Db,
     procs: &[scan::Proc],
     mut full_game: impl FnMut(&steam::Launch) -> Option<u32>,
+    shown: &mut HashMap<String, Shown>,
 ) -> BTreeMap<&'a str, (&'a db::App, u32)> {
     let mut found: BTreeMap<&str, (&db::App, u32)> = BTreeMap::new();
     for p in procs {
@@ -103,9 +137,6 @@ fn running<'a>(
     for p in procs {
         let Some(launch) = &p.steam else { continue };
         let Some(app) = db.steam(launch.app).or_else(|| db.steam(full_game(launch)?)) else { continue };
-        if found.contains_key(app.id.as_str()) {
-            continue;
-        }
         let game = launch.runs_game(&p.argv0).then_some(p.pid);
         let hit = steam.entry(&app.id).or_insert((app, game, p.pid));
         hit.1 = match (hit.1, game) {
@@ -114,13 +145,38 @@ fn running<'a>(
         };
         hit.2 = hit.2.min(p.pid);
     }
-    found.extend(steam.into_iter().map(|(id, (app, game, lowest))| (id, (app, game.unwrap_or(lowest)))));
+    shown.retain(|id, _| steam.contains_key(id.as_str()));
+    for (id, (app, game, lowest)) in steam {
+        let now = if found.contains_key(id) {
+            Shown::Executable
+        } else {
+            match (shown.get(id), game) {
+                // Its executable, or the game, has exited; helpers don't count.
+                (Some(Shown::Executable), _) | (Some(Shown::GameDir), None) => continue,
+                (_, Some(pid)) => {
+                    found.insert(id, (app, pid));
+                    Shown::GameDir
+                }
+                (None, None) => {
+                    found.insert(id, (app, lowest));
+                    continue;
+                }
+            }
+        };
+        match shown.get_mut(id) {
+            Some(s) => *s = now,
+            None => {
+                shown.insert(id.to_owned(), now);
+            }
+        }
+    }
     found
 }
 
 fn cache_path() -> PathBuf {
     // `-v2`: from Steam matching on, the cache keeps Steam IDs. An older cache
-    // has none, and would be trusted for up to a day under the old name.
+    // has none, and would be trusted for up to a day under the old name, so it
+    // is only an offline fallback now (`db::Source::cached`).
     const FILE: &str = "detectable-v2.json";
     // systemd's CacheDirectory= sets this; otherwise follow XDG.
     if let Some(d) = std::env::var_os("CACHE_DIRECTORY") {
@@ -152,14 +208,13 @@ fn main() -> ExitCode {
         Some(f) => db::Source::fixed(f.clone()),
         None => {
             let cache = cache_path();
-            // The cache from before Steam matching (see `cache_path`).
-            let _ = std::fs::remove_file(cache.with_file_name("detectable.json"));
-            db::Source::cached(cache, MAX_AGE)
+            let legacy = cache.with_file_name("detectable.json");
+            db::Source::cached(cache, legacy, MAX_AGE)
         }
     };
     let uid = scan::own_uid();
     let boot = scan::boot_time();
-    let mut demos = steam::Demos::default();
+    let mut steam_state = SteamState::default();
 
     if opts.once {
         let Some(db) = source.load() else { return ExitCode::from(1) };
@@ -168,7 +223,7 @@ fn main() -> ExitCode {
             let paths: Vec<_> = c.paths.iter().map(|p| p.display().to_string()).collect();
             println!("client {}: {}", c.key, paths.join(", "));
         }
-        for (id, g) in detect(&db, uid, boot, &mut demos) {
+        for (id, g) in detect(&db, uid, boot, &mut steam_state) {
             println!("game {} ({id}) pid {} start {:?}", g.name, g.pid, g.start_ms);
         }
         return ExitCode::SUCCESS;
@@ -214,7 +269,7 @@ fn main() -> ExitCode {
             continue;
         };
 
-        let games = detect(db, uid, boot, &mut demos);
+        let games = detect(db, uid, boot, &mut steam_state);
         let client_keys: HashSet<&str> = clients.iter().map(|c| c.key.as_str()).collect();
 
         sessions.retain(|(app, key), s| {
@@ -302,9 +357,14 @@ mod tests {
         scan::Proc { pid, argv0: argv0.into(), args: Vec::new(), steam }
     }
 
+    /// One scan with nothing remembered from earlier ones.
     fn pids(db: &db::Db, procs: &[scan::Proc]) -> Vec<(&'static str, u32)> {
+        scan(db, procs, &mut HashMap::new())
+    }
+
+    fn scan(db: &db::Db, procs: &[scan::Proc], shown: &mut HashMap<String, Shown>) -> Vec<(&'static str, u32)> {
         let names = |id: &str| if id.starts_with("1529") { "Guildrun" } else { "Valheim" };
-        running(db, procs, |l| (l.app == 4425970).then_some(3669200))
+        running(db, procs, |l| (l.app == 4425970).then_some(3669200), shown)
             .into_iter()
             .map(|(id, (_, p))| (names(id), p))
             .collect()
@@ -344,10 +404,26 @@ mod tests {
         assert_eq!(pids(&db, &native), [("Valheim", 116324)]);
     }
 
+    /// The same tree without the processes in the game's directory: before the
+    /// game starts, or after it and its crash handler exit.
+    fn proton_without_game(app: u32) -> Vec<scan::Proc> {
+        proton(app).into_iter().filter(|p| !p.argv0.starts_with("S:")).collect()
+    }
+
     #[test]
     fn before_the_game_starts_the_wrapper_stands_in() {
-        let tree: Vec<_> = proton(3669200).into_iter().filter(|p| !p.argv0.starts_with("S:")).collect();
-        assert_eq!(pids(&db(), &tree), [("Guildrun", 116703)]);
+        assert_eq!(pids(&db(), &proton_without_game(3669200)), [("Guildrun", 116703)]);
+    }
+
+    #[test]
+    fn the_rest_of_the_tree_does_not_outlive_the_game() {
+        let (db, mut shown) = (db(), HashMap::new());
+        assert_eq!(scan(&db, &proton(3669200), &mut shown), [("Guildrun", 116913)]);
+        // The game exited; `reaper`, Proton and Wine's services wind down.
+        assert!(scan(&db, &proton_without_game(3669200), &mut shown).is_empty());
+        // Once the whole tree is gone, the next launch starts over.
+        assert!(scan(&db, &[], &mut shown).is_empty());
+        assert_eq!(scan(&db, &proton_without_game(3669200), &mut shown), [("Guildrun", 116703)]);
     }
 
     #[test]
@@ -371,5 +447,18 @@ mod tests {
             proc(700, r"S:\common\Valheim\UnityCrashHandler64.exe", tag),
         ];
         assert_eq!(pids(&db(), &procs), [("Valheim", 600)]);
+    }
+
+    #[test]
+    fn an_executable_match_ends_when_the_executable_exits() {
+        let tag = Some((892970, "valheim"));
+        let (db, mut shown) = (db(), HashMap::new());
+        let reaper = || proc(500, "/s/Steam/ubuntu12_32/reaper", tag);
+        let handler = || proc(700, r"S:\common\Valheim\UnityCrashHandler64.exe", tag);
+        let running = [reaper(), proc(600, r"S:\common\Valheim\valheim.exe", tag), handler()];
+        assert_eq!(scan(&db, &running, &mut shown), [("Valheim", 600)]);
+        // `valheim.exe` exited. The crash handler is in the game's directory,
+        // but it isn't the executable that stood for the title.
+        assert!(scan(&db, &[reaper(), handler()], &mut shown).is_empty());
     }
 }

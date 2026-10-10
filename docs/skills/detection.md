@@ -62,8 +62,11 @@ don't say.
   Redist 228980, the Steam Linux Runtimes, Proton) was on the list.
 - **The cache file name carries its format.** It became `detectable-v2.json` when
   Steam IDs were added: under the old name, a cache without them would have been
-  trusted for up to 24 h after an upgrade. The bridge deletes `detectable.json`.
-  Rename it again when the cache gains a field matching depends on.
+  trusted for up to 24 h after an upgrade. Keep the old file as an offline fallback
+  (`Source`'s `legacy`) and delete it only after a fetch has written the new one.
+  Deleting it up front left a first start offline with no list at all, executable
+  matching included (Greptile on #20, reproduced under `unshare -rn`). Rename it
+  again when the cache gains a field matching depends on.
 
 ## Steam's environment
 
@@ -85,6 +88,15 @@ don't say.
   `steamapps/common/SteamLinuxRuntime_soldier/` (or `_4`) and has a lower PID than
   the game. `<dir>` may contain spaces. The lowest PID with the ID is `reaper`, which
   starts before the game, so it only stands in until the game starts.
+- **The tree outlives the game.** Wine's services, `reaper` and crash handlers can
+  still be running after the game exits, and a lone `reaper` looks the same as one
+  before the game started. So `running` remembers per title what stood for it during
+  the current launch (`Shown`): once that has exited, the rest of the tree doesn't
+  keep the title shown, and a title is forgotten when its tree is gone. The same
+  goes for a title matched by executable: without this, a crash handler in the
+  game's directory took over once `valheim.exe` exited (Greptile on #20). Live, a
+  stand-in game's title was cleared on the first scan after it exited, while its
+  stand-in `reaper` kept running (2026-10-10).
 - **umu-launcher (Faugus) sets `SteamAppId=default`** for everything it launches,
   Battle.net included, so a non-numeric ID is not a Steam app.
 - **A demo has its own app ID.** The demo was `4425970` and the full game `3669200`;
@@ -95,8 +107,14 @@ don't say.
   was format v29 (magic `0x07564429`: keys are indices into a string table at the
   offset in the header), and all 29 demos in it had a `parent`. `steam::Demos`
   parses it only when an ID not on the list appears and the file's mtime has
-  changed. The store API (`store.steampowered.com/api/appdetails?appids=<id>` →
-  `"fullgame"`) says the same, but online and rate-limited.
+  changed; a failed read keeps the last map and is retried. The store API
+  (`store.steampowered.com/api/appdetails?appids=<id>` → `"fullgame"`) says the
+  same, but online and rate-limited.
+- **A path from a process's environment is untrusted.** Any process of the user's,
+  sandboxed flatpak apps included, can set `STEAM_COMPAT_CLIENT_INSTALL_PATH`. A FIFO
+  at `appcache/appinfo.vdf` blocked `fs::read`, and with it every scan, until
+  killed. `read_appinfo` opens with `O_NONBLOCK`, then rejects anything but a
+  regular file under 256 MiB (Greptile on #20, reproduced with `mkfifo`).
 - **Some of the user's own `environ` files are unreadable** (`Permission denied`):
   `systemd --user`, `(sd-pam)` and `ssh-agent` on 2026-10-10. The scan treats them as
   not Steam games.

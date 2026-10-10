@@ -63,6 +63,8 @@ flowchart LR
   an entry's Steam ID is that game. Steam's whole launch tree carries the ID, so the
   game is the lowest PID whose argv0 lies in the game's own directory
   (`STEAM_COMPAT_INSTALL_PATH`), and Steam's `reaper` wrapper stands in until it starts.
+  Once the game, or an executable match, has exited, the rest of the tree (Wine's
+  services, `reaper`, crash handlers) doesn't keep the title shown.
   A demo has its own app ID, which the list lacks; Steam's local
   `appcache/appinfo.vdf` names its full game, which is shown instead. An executable
   match takes precedence over a Steam match for the same title.
