@@ -25,18 +25,50 @@ git worktree add -b 2-port-self-learning-mandate \
 
 ## Stacked PRs
 
-When a change needs code that is still in an open PR, branch from that PR's branch
-and open the new PR with `--base <parent-branch>`. Its diff then shows only its own
-commits. Merge the parent first. GitHub retargets the child to `main` only when the
-parent's branch is deleted, and this repo doesn't delete merged branches
-(`delete_branch_on_merge: false`, as of 2026-10-09). So retarget it yourself:
-`gh pr edit <child> --base main`.
+When a change needs code that is still in an open PR, stack it with GitHub's
+[stacked pull requests](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs)
+(public preview as of 2026-10-10). Each layer is still an issue branch in its own
+worktree (§ Worktrees and branches), created from the branch below it. The
+`gh stack` extension links them and keeps them rebased:
 
-When the fix lands on the parent and the skill file exists only on the child,
-the same-commit rule can't be met. Write the lesson on the child, in a commit that
-cites the fix's full SHA, as for cross-repo pairs (AGENTS.md § The
-Self-Improvement Loop). Done for kitten-lily/presence-bridge@514c828 on #3, whose
-lesson is in `ipc.md` on #6.
+```bash
+gh extension install github/gh-stack      # once; needs gh >= 2.90. v0.2.1 was used here
+gh pr create --base <parent-branch> …      # open each layer's PR as usual
+gh stack init --base main <bottom-branch> <next-branch>   # local tracking
+gh stack link <bottom-pr> <next-pr>        # the stack on GitHub; additive, rerun to extend
+gh stack view --short
+```
+
+`init` adopts branches that are checked out in other worktrees without switching any
+checkout, and its tracking lives in the clone's common git directory, so every worktree
+sees it. `link` with PR numbers pushes nothing, opens no PRs and sets the bases. Use it
+instead of `gh stack submit`, which writes PR titles and bodies in its own editor, or
+generates them with `--auto`. A stack takes a number from the same sequence as issues
+and PRs: #10 and #12 became stack #14 on 2026-10-10.
+
+How a stack differs from PRs that merely target each other's branches:
+
+- **Merging needs a linear history.** Once `main` moves (any merge, Renovate's
+  included), `gh stack view` marks the bottom layer ⚠ and `--json` reports
+  `needsRebase: true`. Stack #14 hit this when #13 merged before it. Restore it with
+  `gh stack rebase`, then `gh stack push`. That rewrites every commit in the stack, so
+  each one is re-signed and needs a key touch (§ Commit signing). The merge box's
+  **Rebase stack** button rebases on GitHub with no touch, but then GitHub signs the
+  new commits, not your key.
+- **Merge from the bottom up, with a merge commit** (§ Merging), from the merge box
+  or with `gh stack merge --merge`. Merging the top PR merges the whole stack at once,
+  one merge commit per PR, and keeps every commit. GitHub says the legacy merge
+  endpoints can't merge a stack, so `gh pr merge` may fail on one; this hasn't been
+  tried here.
+- **Merging only the bottom rebases the layers above it** automatically, which gives
+  their commits new SHAs. So don't cite a higher layer's SHA from krytis
+  (AGENTS.md § The Self-Improvement Loop) until that layer has merged. Or merge the
+  whole stack at once. The layers above retarget `main` by themselves.
+- **CI** runs for every PR in the stack, but each run reads the workflow from that
+  PR's own branch. #10 sat below the layer that added `checks.yml` and got no CI run.
+- **A fix and its lesson go in the same layer.** If the skill file is created in a
+  higher layer, move its creation down: commit in the lower layer's worktree, then run
+  `gh stack rebase --upstack` and resolve the higher layer's copy.
 
 ## Review: Greptile
 
