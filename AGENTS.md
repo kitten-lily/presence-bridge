@@ -20,9 +20,10 @@ How mise and the tasks behave, and the traps, are in
 - **Verification.** A PR states that `mise run lint ::: test` passed, and links the run
   or pastes the result. `mise run lint test` is not the same command: it runs only
   `lint` (`docs/skills/mise.md` § Running several tasks). A PR that changes docs also
-  states that `mise run docs-links` passed, and one that changes `mise.toml` that
-  `mise run mise-lock --check` did. A change to runtime behaviour also gets a live check
-  (`README.md` § Testing).
+  states that `mise run docs-links` passed, one that changes `mise.toml` that
+  `mise run mise-lock --check` did, and one that changes `.github/renovate.json5` that
+  `mise run renovate-check --explain` did. A change to runtime behaviour also gets a
+  live check (`README.md` § Testing).
 - **Mise and toolchain lessons** go into `docs/skills/mise.md`, in the same commit as
   the change that taught them (§ The Self-Improvement Loop below).
 
@@ -88,6 +89,7 @@ was rebuilt on 2026-10-09 and its cited `e016101` stopped being on any branch.
 | Detection and matching rules, the detectable list, crate dependencies, game process behaviour | here, [`docs/skills/detection.md`](docs/skills/detection.md) |
 | Branches, review, merging, and cross-repo pairing in this repo | here, [`docs/skills/workflow.md`](docs/skills/workflow.md) |
 | The mise toolchain, `mise.toml`, `mise.lock`, tasks | here, [`docs/skills/mise.md`](docs/skills/mise.md) |
+| Renovate: `.github/renovate.json5`, which updates open and auto-merge, checking the config | here, [`docs/skills/renovate.md`](docs/skills/renovate.md) |
 | Flatpak sandbox internals, BuildStream packaging, the user unit and preset in the image, freedesktop-sdk's Rust version, commit-signing hardware | krytis, [`bst.md`](https://github.com/starlit-os/krytis/blob/main/docs/skills/bst.md) and [`workflow.md`](https://github.com/starlit-os/krytis/blob/main/docs/skills/workflow.md) |
 
 If a lesson spans both, put each half where it belongs and link them.
@@ -167,7 +169,7 @@ branch, and diffing against `main` would count the parent's commits as this PR's
 Use the fetched remote ref, since a local branch of that name may be stale or absent:
 `git fetch -q origin && base=origin/$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || echo main)`.
 
-- Areas touched: `git diff "$base"...HEAD --stat -- src/ mise/ systemd/ docs/`.
+- Areas touched: `git diff "$base"...HEAD --stat -- src/ mise/ systemd/ docs/ .github/`.
 - Skill file changes: `git diff "$base"...HEAD -- docs/skills/`.
 - For each touched area, confirm the matching skill file was updated, or that the
   change taught nothing new. Flag gaps, and note when no skill file covers the area.

@@ -17,7 +17,10 @@ Ported from [krytis § Tool declarations](https://github.com/starlit-os/krytis/b
   machines that happen to have it. The fix is `mise use <tool>@<version>` and
   `mise run mise-lock`, never a workaround in the calling shell. From krytis
   [§ `mise run` scrubs `PATH`](https://github.com/starlit-os/krytis/blob/main/docs/skills/mise.md#mise-run-scrubs-path-down-to-declared-tools--undeclared-task-deps-fail-silently).
-  `git`, `grep` and coreutils come from the base system and need no entry.
+  `git`, `grep` and coreutils come from the base system and need no entry, and so does
+  `podman`, which `renovate-check` runs Renovate under. That task also calls `gh`, only
+  to borrow a token, and runs without one when `gh` is missing
+  ([`renovate.md`](renovate.md) § Checking the config).
 - **Tasks from outside the repo show up in `mise tasks`** *(here)*. On krytis,
   `fido2:*` tasks are declared in the system-wide `/etc/mise/config.toml`, so they are
   listed next to this repo's. They are not part of this repo.
@@ -30,7 +33,8 @@ krytis's freedesktop-sdk junction is `freedesktop-sdk-26.08.2`
 (`elements/freedesktop-sdk.bst` in krytis), whose `elements/include/rust-source.yml`
 fetches `rustc-1.98.1-src.tar.xz` (checked 2026-10-09). Code that only compiles on a
 newer Rust would pass here and fail in the image build. So the pin moves when krytis
-moves that junction, never ahead of it, and Renovate must not bump it (#4).
+moves that junction, never ahead of it. `.github/renovate.json5` turns Renovate off
+for it ([`renovate.md`](renovate.md) § The `rust` pin is held).
 
 - `components = "clippy,rustfmt"` is a comma-separated string. The array form
   (`["clippy", "rustfmt"]`) parses too, but whether it installs the components was not

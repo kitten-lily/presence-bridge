@@ -57,8 +57,8 @@ badges.
 Merge with a **merge commit**, never squash or rebase. A krytis commit that pairs
 with a commit here cites its SHA (AGENTS.md § The Self-Improvement Loop); squash and
 rebase merges create new SHAs and leave that citation pointing at a commit on no
-branch. All three merge methods are enabled on the repo (as of 2026-10-09), so pick
-it explicitly.
+branch. Squash and rebase merges are disabled on the repo (since 2026-10-10), and
+Renovate's `automergeStrategy` is `"merge"` to match ([`renovate.md`](renovate.md) § Merging).
 
 ## Commit signing
 

@@ -1,0 +1,53 @@
+// docs/skills/renovate.md explains each setting; check changes with
+// `mise run renovate-check --explain` and `--dry-run`.
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  // An allowlist. A custom manager added later is silently skipped unless
+  // "custom.regex" is listed here too. github-actions finds nothing until a
+  // workflow lands, and says so in the log.
+  "enabledManagers": ["cargo", "mise", "github-actions"],
+  "baseBranchPatterns": ["main"],
+  "pinDigests": true,
+  // Commits are made through the GitHub API, which signs them (verified).
+  "platformCommit": "enabled",
+  // Renovate only bumps direct deps. Transitive crates in Cargo.lock
+  // (rustls and the rest) move only through lock file maintenance, which runs
+  // `cargo update` for Cargo.lock and `mise lock --bump` for mise.lock, on
+  // Renovate's default schedule (before 4am UTC on Monday), in one PR.
+  "lockFileMaintenance": { "enabled": true },
+  // RustSec advisories reach OSV directly. GitHub's Dependabot alerts stay on
+  // too, and also flag Cargo.lock's transitive crates:
+  // docs/skills/renovate.md § Vulnerability alerts.
+  "osvVulnerabilityAlerts": true,
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["digest", "pin", "patch", "minor", "lockFileMaintenance"],
+      "automerge": true,
+      "automergeType": "pr",
+      // The repo's only enabled merge method (docs/skills/workflow.md § Merging).
+      "automergeStrategy": "merge",
+    },
+    {
+      // The requirements are bare majors (`serde = "1"`) and Cargo.lock is
+      // committed, so an in-range release moves only Cargo.lock, and a new
+      // major rewrites the requirement. This is what cargo's "auto" resolves
+      // to; set here so it doesn't depend on that default.
+      "matchManagers": ["cargo"],
+      "rangeStrategy": "update-lockfile",
+    },
+    {
+      // These auto-merge unattended, so a hijacked release should not
+      // land within hours of being published.
+      "matchManagers": ["cargo", "mise"],
+      "minimumReleaseAge": "1 day",
+    },
+    {
+      // krytis compiles this crate with freedesktop-sdk's Rust, so the pin
+      // moves with krytis's junction, by hand (docs/skills/mise.md § The Rust pin).
+      "matchManagers": ["mise"],
+      "matchDepNames": ["rust"],
+      "enabled": false,
+    },
+  ],
+}
