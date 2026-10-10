@@ -134,3 +134,9 @@ Live check, World of Warcraft under Faugus with the Discord flatpak:
    profile shows "Playing World of Warcraft" with the time since WoW started.
 5. Quit WoW: the log says `game exited, cleared`, and the activity disappears within
    one scan interval.
+
+## License
+
+[MIT](LICENSE). Every dependency is permissively licensed and compatible with it
+(`cargo metadata` on 2026-10-09: mostly `MIT OR Apache-2.0`, plus ISC, BSD-3-Clause,
+Zlib, Unicode-3.0, and CDLA-Permissive-2.0 for `webpki-roots`).
