@@ -54,11 +54,15 @@ release of every transitive crate, however new. So that PR waits for a human
 ## The CI mise version
 
 *(here)* `checks.yml` pins the mise that `jdx/mise-action` installs
-([`ci.md`](ci.md) § Pinning mise). Renovate 44.149.1's `github-actions` manager doesn't
-extract that input at all: its dry-run counts 2 deps in `checks.yml`, the two actions,
-and no `uses-with`. A `custom.regex` manager anchored on the
-`# renovate: datasource=github-releases depName=jdx/mise` comment above the pin
-tracks it instead, on `renovate/jdx-mise-2026.x`.
+([`ci.md`](ci.md) § Pinning mise). The hosted app's `github-actions` manager
+extracts that input and then proposes nothing for it, the silent drop krytis saw
+(§ Silent drops under `pinDigests`). The Dependency Dashboard (#18, 2026-10-10)
+lists `jdx/mise 2026.10.3` under `github-actions` with no update, and the same pin
+under `regex` with `Updates: 2026.10.5`. A local `renovate-check --dry-run` on
+44.149.1 didn't extract the input at all: 2 deps in `checks.yml`, the two actions.
+Its output isn't proof of what the hosted app sees. A `custom.regex` manager anchored
+on the `# renovate: datasource=github-releases depName=jdx/mise` comment above the pin
+is what tracks the version, on `renovate/jdx-mise-2026.x`.
 
 Renovate's bump changes only `version:`, not `mise.lock`. If the new mise writes the
 lock differently, CI's `mise run mise-lock --check` fails, the PR doesn't auto-merge,
