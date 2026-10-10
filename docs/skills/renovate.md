@@ -17,24 +17,26 @@ branch, Renovate opens an onboarding PR instead.
 | `cargo` | `Cargo.toml` (+ `Cargo.lock`) | patch/minor; majors wait for a human |
 | `mise` | `mise.toml` `[tools]` (+ `mise.lock`) | digest/pin/patch/minor, except `rust`, which is off |
 | `github-actions` | `.github/workflows/*.yml` | digest/pin/patch/minor |
+| `custom.regex` | the `version:` pin on `jdx/mise-action` steps | patch/minor |
 | lock file maintenance | `Cargo.lock`, `mise.lock` | no, waits for a human |
 
 `enabledManagers` is an allowlist: a manager not listed is skipped without a word,
-and so is a custom regex manager unless `"custom.regex"` is listed. `github-actions` is
-listed ahead of the first workflow; until then the dry-run logs
-`Manager explicitly enabled in "enabledManagers" config, but found no results`.
+and so is every `customManagers` entry unless `"custom.regex"` is listed.
 
-`cargo` and `mise` updates wait `minimumReleaseAge: "1 day"`, because they auto-merge
-unattended (§ The release-age wait).
+`cargo` and `mise` updates, and `jdx/mise`, wait `minimumReleaseAge: "1 day"`, because
+they auto-merge unattended (§ The release-age wait). Matchers inside one rule are
+ANDed, so `jdx/mise` has a rule of its own: one naming both the managers and the dep
+name would match nothing.
 
 ## The release-age wait
 
 `minimumReleaseAge` is checked per candidate release, against the publish time the
-datasource reports (crates.io for `cargo`, GitHub releases for `usage`), in
-`lib/workers/repository/process/lookup/filter-checks.ts`:
+datasource reports (crates.io for `cargo`, GitHub releases for `usage` and
+`jdx/mise`), in `lib/workers/repository/process/lookup/filter-checks.ts`:
 
 - A release younger than the window is skipped, and Renovate takes the newest one
-  that is old enough.
+  that is old enough. *(here)* With the CI mise pin at `2026.10.3` and `2026.10.7`
+  out, the dry-run proposed `2026.10.5`: the newer two were under a day old.
 - If no newer release is old enough yet, `internalChecksFilter`'s default `"strict"`
   marks the update pending, and no branch or PR is created until it ages
   (`lib/workers/repository/update/branch/index.ts`: `creation is disabled because
@@ -48,6 +50,19 @@ yanked within hours never reaches `main`. It doesn't cover lock file maintenance
 which has no single release to age: `cargo update` takes the newest compatible
 release of every transitive crate, however new. So that PR waits for a human
 (§ Cargo and lock files).
+
+## The CI mise version
+
+*(here)* `checks.yml` pins the mise that `jdx/mise-action` installs
+([`ci.md`](ci.md) § Pinning mise). Renovate 44.149.1's `github-actions` manager doesn't
+extract that input at all: its dry-run counts 2 deps in `checks.yml`, the two actions,
+and no `uses-with`. A `custom.regex` manager anchored on the
+`# renovate: datasource=github-releases depName=jdx/mise` comment above the pin
+tracks it instead, on `renovate/jdx-mise-2026.x`.
+
+Renovate's bump changes only `version:`, not `mise.lock`. If the new mise writes the
+lock differently, CI's `mise run mise-lock --check` fails, the PR doesn't auto-merge,
+and someone relocks on that branch with the new mise (`mise.md` § `mise.lock`).
 
 ## The `rust` pin is held
 
@@ -123,8 +138,9 @@ Renovate merges only on a green branch status, and a commit with no checks at al
 reads as `pending`, so the PR sits open forever, `MERGEABLE` with no error
 ([krytis § Auto-merge needs at least one check](https://github.com/starlit-os/krytis/blob/main/docs/skills/renovate.md#auto-merge-needs-at-least-one-check-on-the-pr)).
 That holds for Renovate's own merge as much as for GitHub's: the GitHub platform code
-turns zero statuses into `pending`. Until a workflow runs on `pull_request`, nothing
-here auto-merges. Tell a missing check from a failing one with:
+turns zero statuses into `pending`. `checks.yml` runs on every `pull_request` with no
+`paths` filter, so every Renovate PR has a check; filtering it would bring the hang
+back. Tell a missing check from a failing one with:
 
 ```bash
 gh pr view <n> --json autoMergeRequest,statusCheckRollup
@@ -185,5 +201,5 @@ extracted, resolved, and then dropped without a PR
 ([krytis § Pinning the mise version](https://github.com/starlit-os/krytis/blob/main/docs/skills/renovate.md#pinning-the-mise-version)).
 If a dependency never gets an update, search the debug log for
 `Could not determine new digest`. *(here)* Neither `crate` (cargo) nor
-`github-releases` (`usage`) hits it: both stale-pin simulations above produced their
-update.
+`github-releases` (`usage`, `jdx/mise`) hits it: their stale-pin simulations all
+produced an update.

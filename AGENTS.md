@@ -90,6 +90,7 @@ was rebuilt on 2026-10-09 and its cited `e016101` stopped being on any branch.
 | Branches, review, merging, and cross-repo pairing in this repo | here, [`docs/skills/workflow.md`](docs/skills/workflow.md) |
 | The mise toolchain, `mise.toml`, `mise.lock`, tasks | here, [`docs/skills/mise.md`](docs/skills/mise.md) |
 | Renovate: `.github/renovate.json5`, which updates open and auto-merge, checking the config | here, [`docs/skills/renovate.md`](docs/skills/renovate.md) |
+| CI: `.github/workflows/`, the mise version it installs, what it can't prove | here, [`docs/skills/ci.md`](docs/skills/ci.md) |
 | Flatpak sandbox internals, BuildStream packaging, the user unit and preset in the image, freedesktop-sdk's Rust version, commit-signing hardware | krytis, [`bst.md`](https://github.com/starlit-os/krytis/blob/main/docs/skills/bst.md) and [`workflow.md`](https://github.com/starlit-os/krytis/blob/main/docs/skills/workflow.md) |
 
 If a lesson spans both, put each half where it belongs and link them.
