@@ -157,6 +157,15 @@ Tasks run from the directory holding `mise.toml`, so use relative paths
 still use it by name, and `mise tasks --hidden` lists it. Hide only what no human types.
 From krytis [§ Hidden tasks](https://github.com/starlit-os/krytis/blob/main/docs/skills/mise.md#hidden-tasks).
 
+### Stopping `mise run dev`
+
+Killing the `mise` process doesn't stop the bridge: `dev` runs it as a child of
+mise's task shell, and on 2026-10-10 it kept running after `kill <mise pid>`
+(`ps -o pid,ppid,args` showed it, its parent still alive). A second `mise run dev`
+then ran a second bridge beside it, and two bridges report every game twice. Stop
+it with Ctrl-C, which reaches the whole process group, or kill the bridge itself:
+`pkill -f '^target/release/presence-bridge'`.
+
 ## New worktrees need `mise trust`
 
 Run `mise trust` once in the root of every new clone or worktree. From krytis

@@ -327,12 +327,7 @@ mod tests {
     use std::os::unix::net::UnixListener;
     use std::thread;
 
-    fn tempdir(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("presence-bridge-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
-        fs::create_dir_all(&d).unwrap();
-        d
-    }
+    use crate::testutil::tempdir;
 
     fn read_frame(s: &mut UnixStream) -> Option<(u32, Value)> {
         let mut hdr = [0u8; 8];
