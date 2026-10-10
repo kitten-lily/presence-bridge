@@ -69,7 +69,9 @@ when **both** hold:
   `Pairs with starlit-os/krytis@<sha>.`), so the pairing is traceable.
 
 A cited SHA has to stay reachable. Merge PRs here with a **merge commit**: a squash
-or rebase merge replaces the commits a krytis message cites. If you must rewrite a
+or rebase merge replaces the commits a krytis message cites, and so does the rebase
+a stack's upper layers get when only its bottom merges
+([`docs/skills/workflow.md`](docs/skills/workflow.md) § Stacked PRs). If you must rewrite a
 commit another repo cites, update the citing commit in the same session. krytis
 `ee15431` (on starlit-os/krytis#1152) had to be reworded after this repo's history
 was rebuilt on 2026-10-09 and its cited `e016101` stopped being on any branch.
