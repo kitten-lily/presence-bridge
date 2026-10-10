@@ -22,13 +22,26 @@ at least one check).
 
 ## Pinning mise
 
-`jdx/mise-action` gets an explicit `version:`, the mise that last wrote `mise.lock`
-(2026.10.3). Without one, the action keeps whatever mise the runner has, or takes the
-newest, so the version drifts unseen
+`jdx/mise-action` gets an explicit `version:`, the mise that last wrote `mise.lock`.
+Without one, the action keeps whatever mise the runner has, or takes the newest, so
+the version drifts unseen
 ([krytis § Pin the mise version, not just the action](https://github.com/starlit-os/krytis/blob/main/docs/skills/ci-runner.md#pin-the-mise-version-not-just-the-action)).
 Lock contents depend on which mise wrote them ([`mise.md`](mise.md) § `mise.lock`),
 so bump `version:` and relock with that same mise in one PR. Renovate's bump does
 only the first half ([`renovate.md`](renovate.md) § The CI mise version).
+
+*(here)* Renovate's first PR, #17 (2026.10.3 → 2026.10.5), failed
+`mise-lock --check`, because 2026.10.5 drops `usage`'s
+`repository_ids = { repository = "677629099" }` line. To relock with the new mise,
+download its release (`gh release download v<version> -R jdx/mise -p
+'mise-v<version>-linux-x64.tar.gz'`) and run it by path in a clean environment:
+`env -i HOME=$HOME PATH=<dir>/mise/bin:/usr/bin:/bin <dir>/mise/bin/mise run mise-lock`.
+Putting it first on `PATH` isn't enough in a shell where mise is activated, because
+`mise` there is a shell function (`type mise`).
+
+The local mise then has to match too. 2026.10.3 adds the line back to a lock
+2026.10.5 wrote, so `mise run mise-lock --check` fails locally after such a bump until
+the local mise is updated. On krytis that is `/usr/bin/mise`, from the image.
 
 The action adds `--locked` to `mise install` itself when `mise.lock` exists, so no
 `install_args` are needed.

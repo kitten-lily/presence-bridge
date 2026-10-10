@@ -62,7 +62,11 @@ tracks it instead, on `renovate/jdx-mise-2026.x`.
 
 Renovate's bump changes only `version:`, not `mise.lock`. If the new mise writes the
 lock differently, CI's `mise run mise-lock --check` fails, the PR doesn't auto-merge,
-and someone relocks on that branch with the new mise (`mise.md` § `mise.lock`).
+and someone relocks on that branch with the new mise (`ci.md` § Pinning mise). That
+commit makes the branch "modified", so Renovate stops rebasing it and never
+auto-merges it (`prAutomergeBlockReason: "BranchModified"`,
+`lib/workers/repository/update/pr/automerge.ts`). Merge it by hand once CI passes.
+#17 went this way on 2026-10-10.
 
 ## The `rust` pin is held
 
