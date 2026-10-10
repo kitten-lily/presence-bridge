@@ -17,7 +17,7 @@ branch, Renovate opens an onboarding PR instead.
 | `cargo` | `Cargo.toml` (+ `Cargo.lock`) | patch/minor; majors wait for a human |
 | `mise` | `mise.toml` `[tools]` (+ `mise.lock`) | digest/pin/patch/minor, except `rust`, which is off |
 | `github-actions` | `.github/workflows/*.yml` | digest/pin/patch/minor |
-| lock file maintenance | `Cargo.lock`, `mise.lock` | yes |
+| lock file maintenance | `Cargo.lock`, `mise.lock` | no, waits for a human |
 
 `enabledManagers` is an allowlist: a manager not listed is skipped without a word,
 and so is a custom regex manager unless `"custom.regex"` is listed. `github-actions` is
@@ -25,8 +25,29 @@ listed ahead of the first workflow; until then the dry-run logs
 `Manager explicitly enabled in "enabledManagers" config, but found no results`.
 
 `cargo` and `mise` updates wait `minimumReleaseAge: "1 day"`, because they auto-merge
-unattended. That gate is per release, so it doesn't reach the transitive crates that
-lock file maintenance moves (§ Cargo and lock files).
+unattended (§ The release-age wait).
+
+## The release-age wait
+
+`minimumReleaseAge` is checked per candidate release, against the publish time the
+datasource reports (crates.io for `cargo`, GitHub releases for `usage`), in
+`lib/workers/repository/process/lookup/filter-checks.ts`:
+
+- A release younger than the window is skipped, and Renovate takes the newest one
+  that is old enough.
+- If no newer release is old enough yet, `internalChecksFilter`'s default `"strict"`
+  marks the update pending, and no branch or PR is created until it ages
+  (`lib/workers/repository/update/branch/index.ts`: `creation is disabled because
+  internalChecksFilter was not met`). The Dependency Dashboard lists it as pending,
+  and its checkbox can force it early.
+- A release with no timestamp is held as pending
+  (`minimumReleaseAgeBehaviour` defaults to `"timestamp-required"`).
+
+The window is there because these PRs merge unattended: a hijacked release that gets
+yanked within hours never reaches `main`. It doesn't cover lock file maintenance,
+which has no single release to age: `cargo update` takes the newest compatible
+release of every transitive crate, however new. So that PR waits for a human
+(§ Cargo and lock files).
 
 ## The `rust` pin is held
 
@@ -65,8 +86,9 @@ stack behind the detectable-list fetch, and the rest of `Cargo.lock`). *(here)*:
   A diff there means Renovate's mise writes the lock differently from ours
   ([`mise.md`](mise.md) § `mise.lock`): CI's `mise run mise-lock --check` then fails
   and the PR waits for a human.
-- No release-age gate applies: `cargo update` takes the newest compatible release of
-  every transitive crate, however new. That is the risk of auto-merging it.
+- It doesn't auto-merge. It has no release-age wait (§ The release-age wait), so a
+  rule sets `automerge: false` and adds a `prBodyNotes` warning to review the diff
+  for crates published in the last day.
 
 ## Vulnerability alerts
 

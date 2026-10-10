@@ -22,11 +22,21 @@
   "osvVulnerabilityAlerts": true,
   "packageRules": [
     {
-      "matchUpdateTypes": ["digest", "pin", "patch", "minor", "lockFileMaintenance"],
+      "matchUpdateTypes": ["digest", "pin", "patch", "minor"],
       "automerge": true,
       "automergeType": "pr",
       // The repo's only enabled merge method (docs/skills/workflow.md § Merging).
       "automergeStrategy": "merge",
+    },
+    {
+      // Lock file maintenance waits for a human. It moves every transitive
+      // crate to its newest release, and minimumReleaseAge can't hold it back:
+      // the age check is per release, and this update has none.
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "automerge": false,
+      "prBodyNotes": [
+        ":warning: Moves every transitive crate in `Cargo.lock` to its newest release, with no release-age wait. Review the diff for crates published in the last day before merging.",
+      ],
     },
     {
       // The requirements are bare majors (`serde = "1"`) and Cargo.lock is
