@@ -78,7 +78,27 @@ don't say.
   the Guildrun Demo under Proton had 19 (also `python3 …/proton`, `wineserver`, Wine's
   `C:\windows\system32\*.exe`, Proton's `discord\bridge.exe`, the game, a crash
   handler and two `crashpad_handler.exe`). The Steam client process and the `bwrap`
-  between launch client and `pv-adverb` carry no `SteamAppId`.
+  between launch client and `pv-adverb` carry no `SteamAppId`, and neither does
+  `steamwebhelper` in its own long-lived pressure-vessel container.
+- **Under flatpak Steam, the game's container isn't `reaper`'s descendant.**
+  `reaper` → `steam-runtime-launch-client`, which asks `flatpak-portal` to spawn the
+  container; its `bwrap` is the portal's child, and the game shares the Steam
+  flatpak's PID namespace (`ppid` chain and `/proc/<pid>/ns/pid`, native Valheim,
+  2026-10-10). `reaper` itself waits on every descendant: run inside the Steam
+  flatpak, `./reaper SteamLaunch AppId=1 -- bash -c "setsid sleep 8 & sleep 2"`
+  exited 6 s after its child, when the orphaned `sleep` did.
+- **`reaper` exits with the last of its launch.** Polling every tagged process each
+  0.1 s on 2026-10-10: quitting native Valheim, all 4 vanished in one poll. Quitting
+  the Guildrun Demo (Proton), the game and `crashpad_handler`s went first, Proton's
+  `python3`, Wine's services and `UnityCrashHandler64.exe` 0.1 s later, and `reaper`,
+  the launch client, `pv-adverb` and `wineserver` in the final poll 0.1 s after that.
+  Nothing outlived `reaper`, so two launches of one title don't overlap, and
+  `KnownLaunch` relies on that: overlapping launches would count as one.
+- **Wine rewrites argv0 after start.** Guildrun's game process first appeared with
+  argv0 `…/files/lib/wine/x86_64-unix/wine`, a Unix path outside the game's
+  directory, and later read `S:\common\Guildrun Demo\Guildrun.exe`. A scan in between
+  sees no game yet, so `reaper` stands in: the bridge reported Guildrun at `reaper`'s
+  PID first (2026-10-10).
 - **The game is the process running from its own directory, not from
   `steamapps/common/`.** Every tagged process has
   `STEAM_COMPAT_INSTALL_PATH=…/steamapps/common/<dir>`, and the game's argv0 contains
@@ -103,9 +123,9 @@ don't say.
   A launch is the same while any of its processes from the last scan remains
   (`KnownLaunch`), compared by PID and start ticks so a reused PID is another
   process. Keying it by its first process (`reaper`) instead would bring an exited
-  game back if `reaper` exits before the last of Wine's services, with a service
-  standing in (Greptile on #20, reproduced in a test; whether `reaper` ever exits
-  first is unchecked).
+  game back if `reaper` exited before the last of Wine's services, with a service
+  standing in (Greptile on #20, reproduced in a test). Live, `reaper` exited last
+  (above).
 - **Any process in the game's directory counts as the game**, so a crash handler
   there keeps a title shown as long as it runs. That is deliberate: a game may start
   through a bootstrap binary in its directory that hands over to another and exits,
