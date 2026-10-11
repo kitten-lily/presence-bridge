@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/kitten-lily/presence-bridge/compare/v0.2.0...v0.2.1) - 2026-10-11
+
+### Dependencies
+
+- *(deps)* update rust crate serde_json to v1.0.152
+
 ## [0.2.0](https://github.com/kitten-lily/presence-bridge/compare/v0.1.0...v0.2.0) - 2026-10-11
 
 ### Added
