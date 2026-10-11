@@ -17,6 +17,9 @@ reports each one over the client's IPC socket as if the game had done it.
 
 Background: [starlit-os/krytis#595](https://github.com/starlit-os/krytis/issues/595).
 
+presence-bridge is not affiliated with or endorsed by Discord Inc. "Discord" names the
+client it works with.
+
 ## How it works
 
 ```mermaid
