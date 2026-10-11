@@ -65,6 +65,17 @@
       "rangeStrategy": "update-lockfile",
     },
     {
+      // A crate update changes the binary krytis builds, so it is a `fix` and
+      // opens the release PR (release-plz.toml's release_commits). Every one
+      // here is lockfile-only (the rule above), and config:recommended's
+      // :semanticPrefixFixDepsChoreOthers types lockfile updates `chore` (its
+      // last rule, `isLockfileUpdate = true`), which this overrides. Lock file
+      // maintenance has its own update type and stays `chore`.
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "semanticCommitType": "fix",
+    },
+    {
       // These auto-merge unattended, so a hijacked release should not
       // land within hours of being published.
       "matchManagers": ["cargo", "mise"],
