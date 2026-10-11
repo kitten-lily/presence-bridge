@@ -16,6 +16,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::steam;
 
 pub const DETECTABLE_URL: &str = "https://discord.com/api/v9/applications/detectable";
+/// Names the project on the fetch, instead of ureq's default `ureq/<version>`:
+/// the endpoint isn't a documented API, so say who is calling and where to look.
+const USER_AGENT: &str =
+    concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"), " (+", env!("CARGO_PKG_REPOSITORY"), ")");
 
 /// The full API response is ~13 MB; ureq's default body cap is 10 MB.
 const MAX_BODY: u64 = 64 << 20;
@@ -264,6 +268,7 @@ impl Source {
 
 fn fetch() -> Fetched {
     let body = ureq::get(DETECTABLE_URL)
+        .header("User-Agent", USER_AGENT)
         .config()
         .timeout_global(Some(FETCH_TIMEOUT))
         .build()
