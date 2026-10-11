@@ -157,6 +157,15 @@ A Steam title checks the same way. With the Guildrun Demo running under Proton
 game, at the PID of `S:\common\Guildrun Demo\Guildrun.exe`, and the Discord flatpak
 showed "Playing Guildrun". Valheim's native build showed as "Playing Valheim".
 
+## Releases
+
+Releases are `v<version>` tags with a GitHub Release, and `CHANGELOG.md` lists what
+each one changed. [release-plz](https://release-plz.dev) keeps a release PR open with
+the next version and changelog; merging it tags the release. Nothing is published to
+crates.io and no binary is attached: krytis builds each tag from source.
+`mise run release-preview` shows what the next release would be.
+[`docs/skills/release.md`](docs/skills/release.md) covers the details.
+
 ## License
 
 [MIT](LICENSE). Every dependency is permissively licensed and compatible with it

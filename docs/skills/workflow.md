@@ -101,11 +101,13 @@ badges.
 - After pushing the fixes, ask for a re-review with a PR comment that says only
   `@greptileai`: `gh pr comment <n> --body @greptileai`.
 
-### Renovate PRs get no review
+### Renovate and release PRs get no review
 
-`.greptile/config.json` sets `excludeAuthors: ["renovate[bot]"]`. Greptile reviews
-every new PR by default, and a dependency bump gives it little to review. Two things
-about the file:
+`.greptile/config.json` sets `excludeAuthors: ["renovate[bot]",
+"presence-bridge-release[bot]"]`, the second being the App that opens release PRs
+([`release.md`](release.md) § The token). Greptile reviews every new PR by default,
+and a dependency bump or a version-and-changelog PR gives it little to review. Two
+things about the file:
 
 - **Greptile reads it from the PR's source branch**
   ([greptile.json reference](https://www.greptile.com/docs/code-review/greptile-json-reference)),
@@ -116,16 +118,15 @@ about the file:
   lists `excludeAuthors`. Its
   [troubleshooting page](https://www.greptile.com/docs/code-review/controlling-nitpickiness)
   says author exclusion is "dashboard-only, not available in greptile.json"
-  (both as of 2026-10-10). So exclude `renovate[bot]` in the dashboard too. The docs
+  (both as of 2026-10-10). So exclude both bots in the dashboard too. The docs
   lag the UI. As of 2026-10-10 the filters are under Settings > Code Review >
   Greptile Review Configuration > Filters, and the page says "Only pull requests
   that meet all the conditions in any rule below get automatically reviewed". So
   conditions inside a rule are ANDed and rules are ORed, and with no rules every PR
-  is reviewed. One rule whose only condition excludes `renovate[bot]` skips Renovate
-  and reviews everything else. A rule added later reviews whatever it matches, so it
-  needs the `renovate[bot]` exclusion too, or Renovate PRs that match it get reviewed
-  again. The dashboard isn't in the repo, so check it there when a Renovate PR still
-  gets a review.
+  is reviewed. One rule whose conditions exclude both bots skips them and reviews
+  everything else. A rule added later reviews whatever it matches, so it needs the
+  same exclusions, or bot PRs that match it get reviewed again. The dashboard isn't
+  in the repo, so check it there when a bot's PR still gets a review.
 
 ## Merging
 
@@ -139,6 +140,10 @@ Renovate's `automergeStrategy` is `"merge"` to match ([`renovate.md`](renovate.m
 #10's commit said "Closes #4 once the app is installed and CI exists", and #4 closed
 3 s after the merge with its acceptance items still open. Write `Part of #N` when the
 merge doesn't finish the issue.
+
+A release PR (branch `release-plz-*`, label `release`) merges the same way. Merging it
+tags a release that krytis builds, so it waits for the live check
+([`release.md`](release.md) § Cutting a release).
 
 ## Commit signing
 

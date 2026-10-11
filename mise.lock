@@ -2,6 +2,16 @@
 
 lockfile_version = 3
 
+[[tools.release-plz]]
+version = "0.3.170"
+backend = "aqua:release-plz/release-plz"
+specifiers = ["0.3.170"]
+
+[tools.release-plz."platforms.linux-x64"]
+checksum = "sha256:4d1e4508aca204589ba559cbcbb8a53cb73e0717765277284306ce1fe2a1cf5a"
+url = "https://github.com/release-plz/release-plz/releases/download/release-plz-v0.3.170/release-plz-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/release-plz/release-plz/releases/assets/619333337"
+
 [[tools.rust]]
 version = "1.98.1"
 backend = "core:rust"

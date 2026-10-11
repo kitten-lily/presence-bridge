@@ -1,10 +1,14 @@
 # CI
 
 Load when changing `.github/workflows/`, or when a check fails in CI but passes
-locally. One workflow, `checks.yml`, runs on every `pull_request`, on pushes to `main`,
-and on demand. It runs the gates AGENTS.md § Tasks and verification asks of a PR, and
-Renovate waits on it before merging ([`renovate.md`](renovate.md) § Auto-merge needs
-at least one check).
+locally. Two workflows:
+
+- `checks.yml` runs on every `pull_request`, on pushes to `main`, and on demand. It
+  runs the gates AGENTS.md § Tasks and verification asks of a PR, and Renovate waits on
+  it before merging ([`renovate.md`](renovate.md) § Auto-merge needs at least one
+  check).
+- `release.yml` runs on pushes to `main`: it tags a merged release PR and opens or
+  updates the next one ([`release.md`](release.md) § How a release happens).
 
 ## Writing the workflow
 
@@ -15,7 +19,9 @@ at least one check).
   line: `mapping values are not allowed here`.
 - **Every step is a mise task**, so a human can rerun it with `mise run <task>`.
   `mise run toolchain-check` exists for that reason (§ The Rust toolchain).
-- **`permissions: contents: read`.** Nothing in the workflow writes.
+- **`permissions: contents: read`** at the top of every workflow. `checks.yml` writes
+  nothing; `release.yml` writes only with a GitHub App token scoped per job
+  ([`release.md`](release.md) § The token).
 - **No `paths` filter.** A Renovate PR without a check never merges.
 - Actions are pinned by commit SHA with the tag in a comment. Renovate's
   `github-actions` manager moves both.
@@ -29,6 +35,12 @@ the version drifts unseen
 Lock contents depend on which mise wrote them ([`mise.md`](mise.md) § `mise.lock`),
 so bump `version:` and relock with that same mise in one PR. Renovate's bump does
 only the first half ([`renovate.md`](renovate.md) § The CI mise version).
+
+Every `jdx/mise-action` step carries the pin and its `# renovate:` comment: three
+steps across `checks.yml` and `release.yml`. *(here)* The dry-run on 2026-10-11
+extracted all three (`"regex": {"fileCount": 2, "depCount": 3}`), and an update for
+one dependency lands on one branch, so they move together. A step without the comment
+keeps its old mise.
 
 *(here)* Renovate's first PR, #17 (2026.10.3 → 2026.10.5), failed
 `mise-lock --check`, because 2026.10.5 drops `usage`'s
