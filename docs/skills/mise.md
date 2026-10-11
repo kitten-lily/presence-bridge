@@ -92,6 +92,8 @@ Ported from krytis [§ Creating a new task](https://github.com/starlit-os/krytis
 2. `mise run lint` runs `usage lint --warnings-as-errors` on it, if it has a `#USAGE`
    spec.
 3. `mise run <name> --help` shows the generated help.
+4. Add `<name>` to the tooling scopes in `release-plz.toml`'s `commit_parsers`, so a
+   `fix(<name>)` stays out of the changelog ([`release.md`](release.md) § The changelog).
 
 - **`#USAGE` lines are KDL, not shell.** `\$` inside `help="…"` is an invalid escape.
   mise then only *warns* and runs the task with no parsed flags, so the first

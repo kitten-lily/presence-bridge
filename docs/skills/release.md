@@ -95,8 +95,14 @@ How Renovate's commits land (prefixes from `:semanticPrefixFixDepsChoreOthers`, 
 A dependency bump never releases by itself: it auto-merges into `main` and only
 updates the release PR.
 
-A tooling fix scoped `fix(<task>)`, such as `fix(renovate-check)`, matches too and is
-listed under Fixed. Use `chore` or `ci` for changes that don't reach the binary.
+A fix to CI or the tooling, scoped with a mise task's name (`fix(renovate-check)`,
+`fix(release)`), matches too: `release_commits` can't exclude it, because
+release-plz's regex has no look-ahead (*(here)* `(?!…)` fails with `look-around,
+including look-ahead and look-behind, is not supported`). The changelog drops it
+(§ The changelog), so *(here)* with only such fixes since the tag, the release PR
+bumps 0.1.0 → 0.1.1 and adds **no** `CHANGELOG.md` section. Leave a release PR with an
+empty changelog open: the next real change fills it. Better still, type such commits
+`ci` or `chore`.
 
 ## Versions
 
@@ -114,8 +120,13 @@ listed under Fixed. Use `chore` or `ci` for changes that don't reach the binary.
 `[changelog].commit_parsers` keeps `feat` (Added), `fix(deps)` and lock file
 maintenance (Dependencies), and other `fix` (Fixed), and drops everything else. *(here)*
 The defaults listed two `Merge pull request` subjects and every `docs`, `ci` and
-`chore` commit under "Other". Review fix-ups (`fix: address Greptile's review of #20`)
-are dropped too.
+`chore` commit under "Other". Also dropped:
+
+- review fix-ups (`fix: address Greptile's review of #20`);
+- `fix` scoped with a mise task's name, or `ci`, `mise`, `renovate`, `greptile`. *(here)*
+  `fix(release)` (#22) and `fix(renovate-check)` (#10) were in v0.1.0's first release
+  PR. The scopes are listed in `release-plz.toml`, so **a new task's name goes there
+  too** ([`mise.md`](mise.md) § Creating a task).
 
 `mise run docs-links` skips `CHANGELOG.md`: it repeats commit subjects as they were
 when released, and a reference in one that later breaks is history.
@@ -136,6 +147,16 @@ the App's bot ([`workflow.md`](workflow.md) § Review: Greptile).
 
 Repository setting "Allow GitHub Actions to create and approve pull requests" stays
 off: the App token doesn't need it.
+
+*(here)* **`Not Found` from `create-github-app-token` means the App isn't installed on
+the repo.** The first run after #22 merged failed there, with a 404 on
+`GET /repos/kitten-lily/presence-bridge/installation`. That request is already signed
+with the App's key, so the client ID and key were not the problem. Once the App was
+installed on the repo, `gh run rerun <id>` passed and opened #23. A private App can't
+be checked from outside: `gh api apps/<slug>` returns 404 for it too.
+
+*(here)* The first release PR, #23, was authored by `presence-bridge-release[bot]`, and
+its commit is `verified: true`. Checks ran on it, and Greptile didn't review it.
 
 ## Tags are unsigned
 

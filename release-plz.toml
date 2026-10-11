@@ -45,6 +45,10 @@ docs/skills/release.md § Cutting a release
 commit_parsers = [
   { message = '^Merge pull request', skip = true },
   { message = '^fix: address (Greptile|.*review)', skip = true },
+  # Fixes to CI and the tooling: the scope is a mise task, `ci`, `mise`,
+  # `renovate` or `greptile`. They don't change the binary. Add a new task's
+  # name here (docs/skills/release.md § The changelog).
+  { message = '^fix\((ci|build|dev|docs-links|lint|mise|mise-lock|release|release-pr|release-preview|renovate|renovate-check|test|toolchain-check|greptile)\)!?:', skip = true },
   { message = '^feat', group = "Added" },
   { message = '^fix\(deps\)', group = "Dependencies" },
   { message = '^chore\(deps\): lock file maintenance', group = "Dependencies" },
