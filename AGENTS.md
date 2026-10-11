@@ -25,6 +25,8 @@ How mise and the tasks behave, and the traps, are in
   `mise run renovate-check --explain` did, and one that changes `release-plz.toml`
   pastes `mise run release-preview`'s output. A change to runtime behaviour also gets
   a live check (`README.md` § Testing).
+- **Disclosure.** A PR an agent wrote or helped with says so in its body: which agent
+  and what it did (`CONTRIBUTING.md` § AI-assisted contributions).
 - **Mise and toolchain lessons** go into `docs/skills/mise.md`, in the same commit as
   the change that taught them (§ The Self-Improvement Loop below).
 

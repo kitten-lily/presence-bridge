@@ -47,6 +47,11 @@ don't say.
   so a stalled connection never ends. `db::fetch` sets `timeout_global` per request.
   The refresh also runs on a worker thread, so even a slow fetch doesn't stop sessions
   being served (Greptile on #3).
+- **The fetch names the project.** The endpoint isn't a documented API, so `db::fetch`
+  sends `User-Agent: presence-bridge/<version> (+<repository>)`, built from
+  `Cargo.toml`, instead of ureq's default `ureq/<version>`. *(here)* A `.header()` on
+  the request replaces ureq 3.4.2's own: a capture on a local socket showed one
+  `user-agent:` line, ours.
 - **Most entries can't be matched by executable.** On 2026-10-09, 14,168 of the
   24,628 apps had `"executables": []`. Guildrun is one. Every entry carries
   `third_party_skus`, and `db::trim` keeps an app with a Steam ID even with no

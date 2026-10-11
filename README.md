@@ -17,6 +17,9 @@ reports each one over the client's IPC socket as if the game had done it.
 
 Background: [starlit-os/krytis#595](https://github.com/starlit-os/krytis/issues/595).
 
+presence-bridge is not affiliated with or endorsed by Discord Inc. "Discord" names the
+client it works with.
+
 ## How it works
 
 ```mermaid
@@ -97,11 +100,14 @@ $ mise run dev --once         # build, then scan once and print games and client
 $ mise run dev                # build, then run the service loop in the foreground
 $ target/release/presence-bridge --help
 usage: presence-bridge [--once] [--interval SECS] [--include-host] [--db FILE]
+$ target/release/presence-bridge --version
+presence-bridge 0.2.0
 ```
 
 `mise run dev` takes the binary's flags (`--once`, `--interval`, `--include-host`,
 `--db`). `--once` scans once and prints the detected games and reachable clients — the
-first thing to run when presence does not show up. As a service, install the binary to
+first thing to run when presence does not show up. `--version` names the release a
+binary was built from, without the tag's `v`. As a service, install the binary to
 `/usr/bin` and `systemd/presence-bridge.service` to `/usr/lib/systemd/user/`, then
 `systemctl --user enable --now presence-bridge`.
 
