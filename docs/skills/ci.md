@@ -24,7 +24,34 @@ locally. Two workflows:
   ([`release.md`](release.md) § The token).
 - **No `paths` filter.** A Renovate PR without a check never merges.
 - Actions are pinned by commit SHA with the tag in a comment. Renovate's
-  `github-actions` manager moves both.
+  `github-actions` manager moves both, and the repository requires it
+  (§ Repository settings).
+
+## Repository settings
+
+What the workflows run under, read with `gh api` on 2026-10-11, the day the repo went
+public. While it was private on the free plan, rulesets weren't enforced (#4).
+
+- **Ruleset "Default"**, on the default branch: no deletion or force push; changes only
+  through a PR, merged with a merge commit, with every conversation resolved; `Checks`
+  required, with the branch up to date; signed commits; CodeQL results, blocking on
+  errors and on security alerts high or higher. What applies to `main`:
+  `gh api repos/kitten-lily/presence-bridge/rules/branches/main -q '[.[].type]'`.
+- **Ruleset "Release tags"**: `v*` tags can't be created, moved or deleted, except by
+  the release App ([`release.md`](release.md) § Tags are unsigned).
+- **Actions policy**: only actions created by GitHub, plus `jdx/mise-action@*`, and
+  every action pinned to a full commit SHA. A new third-party action fails until it is
+  added under Settings → Actions → General. Workflows from an external contributor's
+  fork wait for approval, and `GITHUB_TOKEN` is read-only.
+- **CodeQL default setup**, for Rust and Actions. *(here)* It kept working with SHA
+  pinning required: #28's analysis passed on 2026-10-11.
+
+*(here)* **A PR opened before the code-scanning rule existed can't merge.** #27, opened
+five minutes before CodeQL was set up, showed `BLOCKED` with `Checks` green, and
+`gh api 'repos/…/code-scanning/analyses?ref=refs/pull/27/merge'` returned none.
+Closing and reopening it ran only `Checks`: default setup doesn't analyse a reopened
+PR. A new PR does, so #27 was closed and the release PR opened again as #28
+(`gh run rerun <id> --job <release-pr job>`).
 
 ## Pinning mise
 
@@ -90,8 +117,5 @@ don't add retries.
 - **Trust.** `CI=true` makes mise trust the config by itself
   ([`mise.md`](mise.md) § New worktrees need `mise trust`), so a config that fails only
   when untrusted, for example after an `[env]` section is added, passes here.
-- **Merging.** The checks can't be made required: rulesets and branch protection
-  return 403 on this private repo on the free plan (as of 2026-10-09, #4). Renovate
-  waits for them, but a red PR can still be merged by hand.
 - **Runtime behaviour.** The live check needs a logged-in Discord and a running game
   (`README.md` § Testing), so a runtime change still states it in the PR.

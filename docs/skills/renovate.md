@@ -136,19 +136,19 @@ Renovate opens a PR for it; lock file maintenance is the routine fix for those.
 
 - **`platformCommit: "enabled"`** makes Renovate commit through the GitHub API, which
   GitHub signs ([krytis § `platformCommit`](https://github.com/starlit-os/krytis/blob/main/docs/skills/renovate.md#platformcommit)).
-  Rulesets and branch protection return 403 on this private repo on the free plan,
-  so nothing here requires signatures. It keeps Renovate's commits verified, like the
-  signed human ones.
+  `main` requires signed commits ([`ci.md`](ci.md) § Repository settings), so an
+  unsigned Renovate commit couldn't merge.
 - **`automergeStrategy: "merge"`** matches the only enabled merge method. Squash and
   rebase were disabled on 2026-10-10 (`allow_squash_merge` and `allow_rebase_merge`
   `false`), for the reason in [`workflow.md`](workflow.md) § Merging.
-- *(here)* **GitHub auto-merge can't be turned on.** `PATCH /repos/…` with
-  `allow_auto_merge=true` returned 200, applied the merge-method changes in the same
-  call, and left `allow_auto_merge: false` (2026-10-10). Renovate then skips
-  `platformAutomerge` (`GitHub-native automerge: not enabled in repo settings` at debug
-  level) and merges the PR itself, through the API with the configured strategy, on a
-  later run once the branch status is green (`lib/workers/repository/update/pr/automerge.ts`).
-  So an auto-merge lands on Renovate's next run, not the moment checks pass.
+- **GitHub auto-merge is on.** *(here)* While the repo was private, `PATCH /repos/…`
+  with `allow_auto_merge=true` returned 200 and left it `false` (2026-10-10), so
+  Renovate merged PRs itself on a later run (`GitHub-native automerge: not enabled in
+  repo settings`, `lib/workers/repository/update/pr/automerge.ts`). It was turned on
+  when the repo went public (2026-10-11). `platformAutomerge` defaults to `true`, so
+  Renovate now switches on GitHub's auto-merge for each PR it would merge, and GitHub
+  merges it once the required checks pass: `Checks` and CodeQL's results, not every
+  check on the branch. No Renovate PR had merged this way yet as of 2026-10-11.
 
 ## Auto-merge needs at least one check
 
@@ -164,8 +164,8 @@ back. Tell a missing check from a failing one with:
 gh pr view <n> --json autoMergeRequest,statusCheckRollup
 ```
 
-An empty `statusCheckRollup` is the missing check. `autoMergeRequest` stays `null`
-here either way, since GitHub auto-merge is off (§ Merging).
+An empty `statusCheckRollup` is the missing check. `autoMergeRequest` is set on a PR
+whose GitHub auto-merge Renovate switched on (§ Merging).
 
 ## Checking the config
 

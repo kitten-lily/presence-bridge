@@ -60,7 +60,9 @@ release, whose version is already tagged, is that race, and shouldn't be merged.
    goes straight into the krytis image.
 3. Merge it with a merge commit (`workflow.md` § Merging).
 4. The `Release` run on `main` tags it. Check with
-   `git ls-remote --tags origin 'v*'` and `gh release view v<version>`.
+   `git ls-remote --tags origin 'v*'`, `gh release view v<version>`, and
+   `gh release verify v<version>`, which checks GitHub's attestation of the tag and
+   its commit.
 
 *(here)* **The tag is on the release PR's head commit, not on the merge commit.**
 `v0.1.0` (#23) points at `4ab72ad` (`chore: release v0.1.0`). The merge is `66e504d`.
@@ -69,6 +71,12 @@ regenerates the PR on top of the newest `main`, so krytis builds the same tree e
 way. Its `bst source track` ref will name `4ab72ad`. The run logged `released
 presence-bridge 0.1.0 (git-only)`. The `release-pr` job after it logged `already up to
 date` and `no commit matches the release_commits regex`, and opened no v0.1.1 PR.
+
+*(here)* **v0.2.0 (#28) was the first release under the repository rules**
+([`ci.md`](ci.md) § Repository settings). The App created the tag through the
+"Release tags" ruleset's bypass, the release came out `immutable: true`, and
+`gh release verify v0.2.0` printed `✓ Release v0.2.0 verified!`. Immutability covers
+releases from v0.2.0 on; v0.1.0 was published before it was enabled.
 
 To skip a release, leave the PR open; later merges update it. Closing it only lasts
 until the next push to `main`, which opens a new one.
@@ -174,9 +182,10 @@ is an annotated tag (`git cat-file -p v0.1.0`) with tagger
 `presence-bridge-release[bot]`, message `chore: Release package presence-bridge
 version 0.1.0`, and no signature. krytis's
 `bst source track` pins the commit (`ref: v<version>-0-g<sha>`, as on
-`elements/core/bootc.bst` in krytis), not the tag's signature, and this private repo
-can't require signatures anyway (rulesets return 403, [`ci.md`](ci.md) § What CI
-doesn't prove).
+`elements/core/bootc.bst` in krytis), not the tag's signature. What keeps a tag
+honest instead: the "Release tags" ruleset lets only the App create, move or delete a
+`v*` tag; an immutable release locks its tag to its commit; and GitHub signs an
+attestation of tag and commit, which `gh release verify` checks.
 
 A signed tag would need the maintainer to run `mise run release` locally after the
 merge, instead of CI: when git's `tag.gpgSign` is `true` (it is on krytis hosts),
