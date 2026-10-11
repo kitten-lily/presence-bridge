@@ -133,8 +133,14 @@ things about the file:
 Merge with a **merge commit**, never squash or rebase. A krytis commit that pairs
 with a commit here cites its SHA (AGENTS.md § The Self-Improvement Loop); squash and
 rebase merges create new SHAs and leave that citation pointing at a commit on no
-branch. Squash and rebase merges are disabled on the repo (since 2026-10-10), and
-Renovate's `automergeStrategy` is `"merge"` to match ([`renovate.md`](renovate.md) § Merging).
+branch. Squash and rebase merges are disabled on the repo (since 2026-10-10), the
+"Default" ruleset allows only merge commits on `main` ([`ci.md`](ci.md) § Repository
+settings), and Renovate's `automergeStrategy` is `"merge"` to match
+([`renovate.md`](renovate.md) § Merging).
+
+The ruleset also requires every review conversation to be resolved, so mark each
+Greptile thread resolved once it has its reply (§ Review: Greptile), and a branch
+that has fallen behind `main` needs **Update branch** before it can merge.
 
 **`Closes #N` in a commit message closes the issue whatever follows the keyword.**
 #10's commit said "Closes #4 once the app is installed and CI exists", and #4 closed

@@ -22,6 +22,7 @@ Load only the file for your current task. Writing a lesson back:
 | Cut or skip a release, or preview the next version and changelog | [`docs/skills/release.md`](skills/release.md) § Cutting a release, § Previewing a release |
 | Find out why a release PR did or didn't open, or change `release-plz.toml` | [`docs/skills/release.md`](skills/release.md) § What opens a release PR |
 | Change `.github/workflows/`, or fix a check that fails only in CI | [`docs/skills/ci.md`](skills/ci.md) |
+| Find out why a PR can't merge, or change rulesets, the Actions policy or CodeQL | [`docs/skills/ci.md`](skills/ci.md) § Repository settings |
 | Bump the mise version CI installs | [`docs/skills/ci.md`](skills/ci.md) § Pinning mise |
 | Create a worktree/branch, stack a PR, answer Greptile, or merge | [`docs/skills/workflow.md`](skills/workflow.md) |
 | Fix `agent refused operation?` when committing | [`docs/skills/workflow.md`](skills/workflow.md) § Commit signing |
