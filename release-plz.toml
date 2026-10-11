@@ -1,0 +1,53 @@
+# release-plz: a release PR bumps Cargo.toml/Cargo.lock and CHANGELOG.md, and
+# merging it tags v<version> and creates the GitHub Release. krytis tracks the
+# tags. docs/skills/release.md explains each setting; preview the next release
+# with `mise run release-preview`.
+
+[workspace]
+# Versions come from v* tags, not crates.io, and `cargo publish` is skipped
+# (Cargo.toml's `publish = false` would refuse it anyway).
+git_only = true
+# Tag only when the merged commit belongs to a release-plz-* PR. Every other
+# merge to main, Renovate's included, only updates the open release PR.
+release_always = false
+# cargo-semver-checks needs a library target; this is a binary.
+semver_check = false
+# In 0.x a feat is a minor bump (0.1.0 -> 0.2.0), a fix a patch.
+features_always_increment_minor = true
+# Every tracked file is in the package (`cargo package --list`), so without this
+# a docs or CI commit would open a release PR. Releases follow what changes the
+# binary krytis builds: features, fixes (Renovate's cargo bumps are
+# `fix(deps)`), and lock file maintenance, which moves transitive crates.
+release_commits = '^(feat|fix)(\(.+\))?!?:|^chore\(deps\): lock file maintenance'
+pr_labels = ["release"]
+pr_body = """
+{%- for release in releases %}
+`{{ release.package }}`: {% if release.previous_version and release.previous_version != release.next_version %}{{ release.previous_version }} → {% endif %}{{ release.next_version }}
+{% if release.title and release.changelog %}
+## {{ release.title }}
+
+{{ release.changelog }}
+{% endif %}
+{%- endfor %}
+
+## Before merging
+
+Merging tags this commit, and krytis builds the tag into its image.
+
+- [ ] Checks passed on this PR.
+- [ ] The live check (README.md § Testing) passed on this branch's head, `<sha>`.
+
+docs/skills/release.md § Cutting a release
+"""
+
+[changelog]
+# First match wins. Only what a user of the binary would notice is listed.
+commit_parsers = [
+  { message = '^Merge pull request', skip = true },
+  { message = '^fix: address (Greptile|.*review)', skip = true },
+  { message = '^feat', group = "Added" },
+  { message = '^fix\(deps\)', group = "Dependencies" },
+  { message = '^chore\(deps\): lock file maintenance', group = "Dependencies" },
+  { message = '^fix', group = "Fixed" },
+  { message = '.*', skip = true },
+]

@@ -113,6 +113,16 @@ stack behind the detectable-list fetch, and the rest of `Cargo.lock`). *(here)*:
   rule sets `automerge: false` and adds a `prBodyNotes` warning to review the diff
   for crates published in the last day.
 
+## Updates and releases
+
+Renovate's commits don't release anything by themselves: release-plz tags only when
+its own release PR merges. Its `release_commits` decides which of them open or update
+that PR. `fix(deps)` (cargo) and `chore(deps): lock file maintenance` do; the `mise`,
+`github-actions` and CI mise `chore(deps)` bumps don't
+([`release.md`](release.md) § What opens a release PR). Renovate's commit types are
+left at `config:recommended`'s defaults for that reason: renaming them would change
+what releases.
+
 ## Vulnerability alerts
 
 `osvVulnerabilityAlerts: true`, so RustSec advisories, which OSV carries, open fix

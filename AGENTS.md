@@ -21,9 +21,10 @@ How mise and the tasks behave, and the traps, are in
   or pastes the result. `mise run lint test` is not the same command: it runs only
   `lint` (`docs/skills/mise.md` § Running several tasks). A PR that changes docs also
   states that `mise run docs-links` passed, one that changes `mise.toml` that
-  `mise run mise-lock --check` did, and one that changes `.github/renovate.json5` that
-  `mise run renovate-check --explain` did. A change to runtime behaviour also gets a
-  live check (`README.md` § Testing).
+  `mise run mise-lock --check` did, one that changes `.github/renovate.json5` that
+  `mise run renovate-check --explain` did, and one that changes `release-plz.toml`
+  pastes `mise run release-preview`'s output. A change to runtime behaviour also gets
+  a live check (`README.md` § Testing).
 - **Mise and toolchain lessons** go into `docs/skills/mise.md`, in the same commit as
   the change that taught them (§ The Self-Improvement Loop below).
 
@@ -92,6 +93,7 @@ was rebuilt on 2026-10-09 and its cited `e016101` stopped being on any branch.
 | Branches, review, merging, and cross-repo pairing in this repo | here, [`docs/skills/workflow.md`](docs/skills/workflow.md) |
 | The mise toolchain, `mise.toml`, `mise.lock`, tasks | here, [`docs/skills/mise.md`](docs/skills/mise.md) |
 | Renovate: `.github/renovate.json5`, which updates open and auto-merge, checking the config | here, [`docs/skills/renovate.md`](docs/skills/renovate.md) |
+| Releases: `release-plz.toml`, `.github/workflows/release.yml`, what opens a release PR, the tags krytis tracks | here, [`docs/skills/release.md`](docs/skills/release.md) |
 | CI: `.github/workflows/`, the mise version it installs, what it can't prove | here, [`docs/skills/ci.md`](docs/skills/ci.md) |
 | Flatpak sandbox internals, BuildStream packaging, the user unit and preset in the image, freedesktop-sdk's Rust version, commit-signing hardware | krytis, [`bst.md`](https://github.com/starlit-os/krytis/blob/main/docs/skills/bst.md) and [`workflow.md`](https://github.com/starlit-os/krytis/blob/main/docs/skills/workflow.md) |
 
