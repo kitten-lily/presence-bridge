@@ -41,6 +41,17 @@ action.
 A release PR stays open while other PRs merge, and is regenerated on each push to
 `main`. Nothing is tagged until a human merges it.
 
+**`release` has no concurrency group.** A group holds one running and one pending run,
+and a newer pending run cancels the older one even with `cancel-in-progress: false`.
+`release` acts only on its own `HEAD`, so a release PR's merge queued behind a busy run
+and then displaced by the next push would never be tagged (Greptile on #22). Runs
+can't collide without one: only the run for a release PR's merge acts. `release-pr`
+keeps a group, where losing a pending run is harmless because the next one reads a
+newer `main`. `needs: release` orders the jobs within one run, not across runs: a push
+landing seconds after a release PR's merge can run `release-pr` before the tag exists.
+What release-plz proposes then hasn't been seen: a release PR opened right after a
+release, whose version is already tagged, is that race, and shouldn't be merged.
+
 ## Cutting a release
 
 1. Read the release PR: the version, and the changelog in its body.

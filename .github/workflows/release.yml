@@ -13,15 +13,13 @@ on:
 permissions:
   contents: read
 
-# One run at a time, never cancelled: a cancelled `release` could leave a tag
-# without its GitHub Release.
-concurrency:
-  group: release
-  cancel-in-progress: false
-
 jobs:
   release:
     name: Release
+    # No concurrency group. A group keeps one pending run and cancels any older
+    # pending one, and `release` acts only on its own HEAD, so a release PR's
+    # merge queued behind a busy run would never be tagged. Runs can't collide:
+    # only the run for a release PR's merge does anything.
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -58,6 +56,11 @@ jobs:
     # After `release`: on the merge of a release PR, the new tag has to exist
     # before the next version is worked out from it.
     needs: release
+    # One at a time, so two runs don't push to the release branch at once. A
+    # newer pending run replacing an older one is fine: it sees a newer main.
+    concurrency:
+      group: release-pr
+      cancel-in-progress: false
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
