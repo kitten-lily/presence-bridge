@@ -119,9 +119,17 @@ Renovate's commits don't release anything by themselves: release-plz tags only w
 its own release PR merges. Its `release_commits` decides which of them open or update
 that PR. `fix(deps)` (cargo) and `chore(deps): lock file maintenance` do; the `mise`,
 `github-actions` and CI mise `chore(deps)` bumps don't
-([`release.md`](release.md) § What opens a release PR). Renovate's commit types are
-left at `config:recommended`'s defaults for that reason: renaming them would change
-what releases.
+([`release.md`](release.md) § What opens a release PR).
+
+*(here)* **Cargo updates are `fix` only because a rule says so.**
+`:semanticPrefixFixDepsChoreOthers` types a `dependencies` update `fix`, but its last
+rule, `matchJsonata: ["isLockfileUpdate = true"]`, makes every lockfile update
+`chore` again, and `rangeStrategy: "update-lockfile"` makes every in-range crate
+update a lockfile update. The Dependency Dashboard (#18) listed
+`chore(deps): update rust crate serde_json to v1.0.152` on 2026-10-11, which
+`release_commits` doesn't match. A rule now sets `semanticCommitType: "fix"` for
+cargo major, minor and patch updates; lock file maintenance has its own update type
+and stays `chore`. `mise run renovate-check --explain` shows the type per update.
 
 ## Vulnerability alerts
 
@@ -171,7 +179,7 @@ whose GitHub auto-merge Renovate switched on (§ Merging).
 
 ```bash
 mise run renovate-check              # validate the repo config, --strict
-mise run renovate-check --explain    # every rule's verdict per package and update type
+mise run renovate-check --explain    # every rule's verdict and commit type per package and update type
 mise run renovate-check --dry-run    # extract and look up against the working tree
 ```
 
@@ -186,12 +194,19 @@ token` for GitHub lookups when `gh` is installed, and runs rate-limited without 
 - **`renovate-config-validator` takes no path.** Given one, it validates the file as
   *global* config and skips the repo-level checks. `--strict` also fails on migration
   warnings.
-- **`--dry-run` never shows auto-merge.** It stops before branches are built. `--explain`
-  calls Renovate's own `applyPackageRules()` on the real config and prints `off`,
-  `hold` or `AUTO` for each name a rule matches, a fall-through `(any other package)`
+- **`--dry-run` never shows auto-merge or commit types.** It stops before branches are
+  built, and *(here)* with `--platform=local` it logs `semanticCommits: score=0` and
+  `disabled`, though this repo's history is conventional. `--explain` resolves `config:recommended`'s presets,
+  calls Renovate's own `applyPackageRules()`, and prints `off`, `hold` or `AUTO` plus
+  the commit type for each name a rule matches, a fall-through `(any other package)`
   per manager, and a lock file maintenance row for managers that support it. *(here)*
-  The helper is a heredoc inside `mise/tasks/renovate-check`, not a separate script,
-  because AGENTS.md § Tasks and verification allows none outside `mise/tasks/`.
+  It marks patch and minor updates as lockfile updates where the rules resolve
+  `rangeStrategy` to `update-lockfile`, as Renovate does for cargo here. A sample
+  without a depType misses preset rules keyed on one: with no cargo rule, the
+  fall-through row read `major=… chore` where Renovate types a `dependencies` major
+  `fix`. The helper is a heredoc inside `mise/tasks/renovate-check`, not a separate
+  script, because AGENTS.md § Tasks and verification allows none outside
+  `mise/tasks/`.
 - **`--explain` fails on a rule it can't exercise** *(here, from Greptile on #10)*.
   Its sample packages carry only a manager, a name, a depType and an update type. A
   rule matching on anything else (`matchDatasources`, `matchFileNames`, …), on a name

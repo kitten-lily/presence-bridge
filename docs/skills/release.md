@@ -100,11 +100,12 @@ later commit being #21's `chore(deps): update dependency jdx/mise`, it logged `n
 commit matches the release_commits regex`; without the setting it proposed 0.1.1.
 
 How Renovate's commits land (prefixes from `:semanticPrefixFixDepsChoreOthers`, in
-`config:recommended`):
+`config:recommended`, and the cargo rule in `.github/renovate.json5`;
+`mise run renovate-check --explain` prints them):
 
 | Renovate update | Subject | Opens or updates the release PR |
 |---|---|---|
-| `cargo` dependency | `fix(deps): …` | yes |
+| `cargo` dependency | `fix(deps): …`, set by a rule: the preset alone gives in-range crate updates `chore` ([`renovate.md`](renovate.md) § Updates and releases) | yes |
 | lock file maintenance | `chore(deps): lock file maintenance` | yes: it moves transitive crates in `Cargo.lock` |
 | `mise` tool, GitHub Action, CI mise pin | `chore(deps): …` | no |
 

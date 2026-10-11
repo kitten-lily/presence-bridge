@@ -47,6 +47,8 @@ const HOME = '/usr/local/renovate/';
 const require = createRequire(HOME);
 const { applyPackageRules } = require(`${HOME}dist/util/package-rules/index.js`);
 const { get: managerApi } = require(`${HOME}dist/modules/manager/index.js`);
+const { resolveConfigPresets } = require(`${HOME}dist/config/presets/index.js`);
+const { getConfig } = require(`${HOME}dist/config/defaults.js`);
 const JSON5 = require('json5');
 // Without init() the logger prints a "not yet initialized" notice per call.
 process.env.LOG_LEVEL = 'fatal';
@@ -54,6 +56,11 @@ await require(`${HOME}dist/logger/index.js`).init();
 
 const file = '.github/renovate.json5';
 const config = JSON5.parse(readFileSync(file, 'utf8'));
+// The rules as Renovate applies them, with config:recommended's presets
+// resolved: :semanticPrefixFixDepsChoreOthers decides each commit's type, which
+// release-plz.toml's release_commits reads. docs/skills/release.md § What opens
+// a release PR.
+const { config: resolved } = await resolveConfigPresets({ ...getConfig(), ...config });
 const managers = config.enabledManagers;
 const rules = config.packageRules ?? [];
 const updateTypes = ['digest', 'pin', 'patch', 'minor', 'major'];
@@ -96,14 +103,24 @@ for (const rule of rules) {
 for (const manager of managers) add(manager, '(any other package)', undefined);
 
 const verdict = (r) => (r.enabled === false ? 'off ' : r.automerge ? 'AUTO' : 'hold');
+// An update within the requirement is a lockfile update under
+// rangeStrategy "update-lockfile", and the presets type those differently.
+const resolve = async (subject) => {
+  const first = await applyPackageRules({ ...resolved, ...subject }, 'lookup');
+  const isLockfileUpdate =
+    first.rangeStrategy === 'update-lockfile' && ['patch', 'minor'].includes(subject.updateType);
+  return applyPackageRules({ ...resolved, ...subject, isLockfileUpdate }, 'lookup');
+};
+const cell = (r) => `${verdict(r)} ${(r.semanticCommitType ?? '-').padEnd(5)}`;
 const width = Math.max(...subjects.map((s) => s.packageName.length), '(lock file maintenance)'.length);
-console.log(`==> ${file}: off = no PR, AUTO = auto-merged, hold = PR awaits a human\n`);
+console.log(`==> ${file}: off = no PR, AUTO = auto-merged, hold = PR awaits a human;`);
+console.log('    then the commit type (fix/chore) when semantic commits are on\n');
 for (const manager of managers) {
   console.log(`  ${manager}`);
   for (const s of subjects.filter((s) => s.manager === manager)) {
     const cells = [];
     for (const updateType of updateTypes) {
-      cells.push(`${updateType}=${verdict(await applyPackageRules({ ...config, ...s, updateType }, 'lookup'))}`);
+      cells.push(`${updateType}=${cell(await resolve({ ...s, updateType }))}`);
     }
     console.log(`    ${s.packageName.padEnd(width)}  ${cells.join('  ')}`);
   }
@@ -111,9 +128,9 @@ for (const manager of managers) {
   // on the top-level lockFileMaintenance object; all of them share one branch.
   // A manager without supportsLockFileMaintenance (github-actions) never gets one.
   if (!managerApi(manager, 'supportsLockFileMaintenance')) continue;
-  const lfm = { ...config, ...config.lockFileMaintenance, manager, updateType: 'lockFileMaintenance' };
+  const lfm = { ...resolved, ...config.lockFileMaintenance, manager, updateType: 'lockFileMaintenance', isLockfileUpdate: true };
   const r = await applyPackageRules(lfm, 'lookup');
-  console.log(`    ${'(lock file maintenance)'.padEnd(width)}  lockFileMaintenance=${verdict(r)}`);
+  console.log(`    ${'(lock file maintenance)'.padEnd(width)}  lockFileMaintenance=${cell(r)}`);
 }
 if (unprobed.length) {
   console.error('\n==> The table ignores these rules, so rows they change are wrong:');
