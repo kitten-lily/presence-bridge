@@ -62,6 +62,14 @@ release, whose version is already tagged, is that race, and shouldn't be merged.
 4. The `Release` run on `main` tags it. Check with
    `git ls-remote --tags origin 'v*'` and `gh release view v<version>`.
 
+*(here)* **The tag is on the release PR's head commit, not on the merge commit.**
+`v0.1.0` (#23) points at `4ab72ad` (`chore: release v0.1.0`). The merge is `66e504d`.
+Their trees are identical (`git diff 4ab72ad 66e504d` is empty), because release-plz
+regenerates the PR on top of the newest `main`, so krytis builds the same tree either
+way. Its `bst source track` ref will name `4ab72ad`. The run logged `released
+presence-bridge 0.1.0 (git-only)`. The `release-pr` job after it logged `already up to
+date` and `no commit matches the release_commits regex`, and opened no v0.1.1 PR.
+
 To skip a release, leave the PR open; later merges update it. Closing it only lasts
 until the next push to `main`, which opens a new one.
 
@@ -161,7 +169,10 @@ its commit is `verified: true`. Checks ran on it, and Greptile didn't review it.
 ## Tags are unsigned
 
 release-plz commits to the release PR through GitHub's GraphQL API, which GitHub
-signs, and creates tags through the REST API, which can't sign them. krytis's
+signs, and creates tags through the REST API, which can't sign them. *(here)* `v0.1.0`
+is an annotated tag (`git cat-file -p v0.1.0`) with tagger
+`presence-bridge-release[bot]`, message `chore: Release package presence-bridge
+version 0.1.0`, and no signature. krytis's
 `bst source track` pins the commit (`ref: v<version>-0-g<sha>`, as on
 `elements/core/bootc.bst` in krytis), not the tag's signature, and this private repo
 can't require signatures anyway (rulesets return 403, [`ci.md`](ci.md) § What CI
