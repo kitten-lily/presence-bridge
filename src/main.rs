@@ -37,7 +37,11 @@ usage: presence-bridge [--once] [--interval SECS] [--include-host] [--db FILE]
   --interval S    seconds between scans (default 5, as arRPC)
   --include-host  also report to $XDG_RUNTIME_DIR/discord-ipc-N (a native
                   client already detects games itself; this doubles them)
-  --db FILE       use this detectable-apps JSON; never fetch or cache";
+  --db FILE       use this detectable-apps JSON; never fetch or cache
+  -V, --version   print the version and exit";
+
+/// `presence-bridge 0.1.0`: the release tag without its `v`.
+const VERSION: &str = concat!(env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"));
 
 /// How long a cached detectable list is trusted, and how often to check.
 const MAX_AGE: Duration = Duration::from_secs(24 * 3600);
@@ -67,6 +71,10 @@ fn parse_args() -> Result<Opts, String> {
             }
             "--db" => o.db = Some(args.next().ok_or("--db needs a file")?.into()),
             "-h" | "--help" => return Err(String::new()),
+            "-V" | "--version" => {
+                println!("{VERSION}");
+                std::process::exit(0);
+            }
             _ => return Err(format!("unknown argument: {a}")),
         }
     }
