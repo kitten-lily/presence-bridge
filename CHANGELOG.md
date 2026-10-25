@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/kitten-lily/presence-bridge/compare/v0.2.2...v0.3.0) - 2026-10-25
+
+### Added
+
+- *(service)* add service install and uninstall commands
+
+### Dependencies
+
+- *(deps)* update rust crate ureq to v3.5.0
+
 ## [0.2.2](https://github.com/kitten-lily/presence-bridge/compare/v0.2.1...v0.2.2) - 2026-10-21
 
 ### Dependencies
