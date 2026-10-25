@@ -100,6 +100,7 @@ $ mise run dev --once         # build, then scan once and print games and client
 $ mise run dev                # build, then run the service loop in the foreground
 $ target/release/presence-bridge --help
 usage: presence-bridge [--once] [--interval SECS] [--include-host] [--db FILE]
+       presence-bridge service install|uninstall
 $ target/release/presence-bridge --version
 presence-bridge 0.2.0
 ```
@@ -107,9 +108,21 @@ presence-bridge 0.2.0
 `mise run dev` takes the binary's flags (`--once`, `--interval`, `--include-host`,
 `--db`). `--once` scans once and prints the detected games and reachable clients — the
 first thing to run when presence does not show up. `--version` names the release a
-binary was built from, without the tag's `v`. As a service, install the binary to
-`/usr/bin` and `systemd/presence-bridge.service` to `/usr/lib/systemd/user/`, then
-`systemctl --user enable --now presence-bridge`.
+binary was built from, without the tag's `v`.
+
+### As a service
+
+`presence-bridge service install` runs it as a systemd user service, now and at every
+login; `presence-bridge service uninstall` stops it and turns it off again.
+
+- Where a package installed `presence-bridge.service` (krytis has it in
+  `/usr/lib/systemd/user/`), `install` only enables that unit, and `uninstall`
+  disables it. krytis's `mise presence-bridge:enable` and `:disable` run these.
+- With no unit installed, as after `cargo install`, `install` first writes
+  `systemd/presence-bridge.service` to `$XDG_CONFIG_HOME/systemd/user/` (by default
+  `~/.config/systemd/user/`), with `ExecStart=` set to the binary you ran, so run the
+  copy you mean to keep. Running `install` again after moving the binary updates the
+  path. `uninstall` removes that file. It leaves any other unit file there alone.
 
 ## Known limitations
 
@@ -139,10 +152,13 @@ is behind. `mise run docs-links` checks the docs' references.
 The tests cover the matcher rules above, Steam matching (which store IDs survive the
 trim, the game's PID within a Proton or native launch tree, `SteamAppId=default`, a
 title matched both ways, demos in both `appinfo.vdf` formats), client discovery (relay
-ordering, empty-file stubs, host-socket opt-in), and a session against an in-process
+ordering, empty-file stubs, host-socket opt-in), a session against an in-process
 fake server (handshake, a ping before the reply, the `SET_ACTIVITY` payload, EOF
 detection, a 4000 handshake rejection, a ping flood that never sends `READY`, a peer
-that never stops sending, a peer that drains a near-1 MiB pong slowly).
+that never stops sending, a peer that drains a near-1 MiB pong slowly), and the unit
+`service install` writes (`ExecStart=` quoting, which files `uninstall` may delete).
+The `systemctl` side is checked against a real user manager in a container
+([`docs/skills/service.md`](docs/skills/service.md) § Testing against a real user manager).
 
 Live check, World of Warcraft under Faugus with the Discord flatpak:
 

@@ -10,6 +10,7 @@
 mod db;
 mod ipc;
 mod scan;
+mod service;
 mod steam;
 #[cfg(test)]
 mod testutil {
@@ -32,13 +33,15 @@ use std::time::{Duration, Instant, SystemTime};
 
 const USAGE: &str = "\
 usage: presence-bridge [--once] [--interval SECS] [--include-host] [--db FILE]
+       presence-bridge service install|uninstall
 
   --once          scan once, print detected games and Discord clients, exit
   --interval S    seconds between scans (default 5, as arRPC)
   --include-host  also report to $XDG_RUNTIME_DIR/discord-ipc-N (a native
                   client already detects games itself; this doubles them)
   --db FILE       use this detectable-apps JSON; never fetch or cache
-  -V, --version   print the version and exit";
+  -V, --version   print the version and exit
+  service         turn the systemd user service on or off (service --help)";
 
 /// `presence-bridge 0.1.0`: the release tag without its `v`.
 const VERSION: &str = concat!(env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"));
@@ -221,6 +224,9 @@ fn cache_path() -> PathBuf {
 }
 
 fn main() -> ExitCode {
+    if std::env::args().nth(1).as_deref() == Some("service") {
+        return service::main(&std::env::args().skip(2).collect::<Vec<_>>());
+    }
     let opts = match parse_args() {
         Ok(o) => o,
         Err(e) => {

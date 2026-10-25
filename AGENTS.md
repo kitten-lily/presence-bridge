@@ -97,6 +97,7 @@ was rebuilt on 2026-10-09 and its cited `e016101` stopped being on any branch.
 | Renovate: `.github/renovate.json5`, which updates open and auto-merge, checking the config | here, [`docs/skills/renovate.md`](docs/skills/renovate.md) |
 | Releases: `release-plz.toml`, `.github/workflows/release.yml`, what opens a release PR, the tags krytis tracks | here, [`docs/skills/release.md`](docs/skills/release.md) |
 | CI: `.github/workflows/`, the mise version it installs, what it can't prove | here, [`docs/skills/ci.md`](docs/skills/ci.md) |
+| `presence-bridge service install\|uninstall`, the unit it writes, testing it against a real user manager | here, [`docs/skills/service.md`](docs/skills/service.md) |
 | Flatpak sandbox internals, BuildStream packaging, the user unit and preset in the image, freedesktop-sdk's Rust version, commit-signing hardware | krytis, [`bst.md`](https://github.com/starlit-os/krytis/blob/main/docs/skills/bst.md) and [`workflow.md`](https://github.com/starlit-os/krytis/blob/main/docs/skills/workflow.md) |
 
 If a lesson spans both, put each half where it belongs and link them.
