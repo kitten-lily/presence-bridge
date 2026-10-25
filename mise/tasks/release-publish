@@ -4,11 +4,6 @@
 
 set -euo pipefail
 
-if [[ $# -gt 0 ]]; then
-    echo "release-publish accepts only its declared options (got: $*)" >&2
-    exit 2
-fi
-
 : "${GH_TOKEN:=$(gh auth token 2>/dev/null || true)}"
 : "${GH_TOKEN:?release-publish needs GH_TOKEN, or a logged-in gh}"
 export GH_TOKEN

@@ -122,9 +122,13 @@ Ported from krytis [§ Creating a new task](https://github.com/starlit-os/krytis
   `mise/tasks/lint` checks only files that contain `#USAGE`. It walks `mise/tasks`
   recursively, because grouped tasks live in subdirectories, and a `grep` on a
   directory fails in a way `if grep -q` reads as "no spec".
-- **Parsed flags arrive as `$usage_<name>`** (hyphens become underscores); the raw
-  arguments stay in `$@`. `mise/tasks/dev` rebuilds the binary's command line from
-  `usage_*`.
+- **Parsed flags arrive as `$usage_<name>`** (hyphens become underscores), but mise
+  deliberately leaves the raw options in `$@`. A task that declares flags must not
+  apply the no-arguments guard used by `build` and `lint`; doing so rejects every
+  valid invocation with an option. Read `usage_*` and ignore the already-parsed raw
+  options, as `mise/tasks/dev` does. This escaped local release-asset verification
+  because the default tag path was exercised, while CI was the first call with
+  `--tag`.
 
 ### Running several tasks
 
