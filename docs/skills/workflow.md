@@ -135,7 +135,7 @@ with a commit here cites its SHA (AGENTS.md § The Self-Improvement Loop); squas
 rebase merges create new SHAs and leave that citation pointing at a commit on no
 branch. Squash and rebase merges are disabled on the repo (since 2026-10-10), the
 "Default" ruleset allows only merge commits on `main` ([`ci.md`](ci.md) § Repository
-settings), and Renovate's `automergeStrategy` is `"merge"` to match
+settings), and Renovate's `automergeStrategy` is `"merge-commit"` to match
 ([`renovate.md`](renovate.md) § Merging).
 
 The ruleset also requires every review conversation to be resolved, so mark each

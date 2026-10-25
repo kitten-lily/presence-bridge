@@ -146,9 +146,11 @@ Renovate opens a PR for it; lock file maintenance is the routine fix for those.
   GitHub signs ([krytis § `platformCommit`](https://github.com/starlit-os/krytis/blob/main/docs/skills/renovate.md#platformcommit)).
   `main` requires signed commits ([`ci.md`](ci.md) § Repository settings), so an
   unsigned Renovate commit couldn't merge.
-- **`automergeStrategy: "merge"`** matches the only enabled merge method. Squash and
-  rebase were disabled on 2026-10-10 (`allow_squash_merge` and `allow_rebase_merge`
-  `false`), for the reason in [`workflow.md`](workflow.md) § Merging.
+- **`automergeStrategy: "merge-commit"`** explicitly selects the repo's only enabled
+  merge method. Renovate's current schema rejects the former `"merge"` spelling
+  (issue #52, 2026-10-22). Squash and rebase were disabled on 2026-10-10
+  (`allow_squash_merge` and `allow_rebase_merge` `false`), for the reason in
+  [`workflow.md`](workflow.md) § Merging.
 - **GitHub auto-merge is on.** *(here)* While the repo was private, `PATCH /repos/…`
   with `allow_auto_merge=true` returned 200 and left it `false` (2026-10-10), so
   Renovate merged PRs itself on a later run (`GitHub-native automerge: not enabled in
