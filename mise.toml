@@ -10,7 +10,7 @@
 # junction, never ahead of it. docs/skills/mise.md § The Rust pin.
 rust = { version = "1.98.1", components = "clippy,rustfmt" }
 # Parses the #USAGE headers in mise/tasks/*.
-usage = "7.1.1"
+usage = "7.1.2"
 # Opens the release PR and tags releases (mise/tasks/release*,
 # .github/workflows/release.yml). Its changelog is git-cliff, built in.
 # docs/skills/release.md.

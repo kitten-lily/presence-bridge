@@ -51,26 +51,35 @@ which has no single release to age: `cargo update` takes the newest compatible
 release of every transitive crate, however new. So that PR waits for a human
 (§ Cargo and lock files).
 
-## The CI mise version
+## The CI and lock-writer mise version
 
-*(here)* `checks.yml` pins the mise that `jdx/mise-action` installs
-([`ci.md`](ci.md) § Pinning mise). The hosted app's `github-actions` manager
-extracts that input and then proposes nothing for it, the silent drop krytis saw
-(§ Silent drops under `pinDigests`). The Dependency Dashboard (#18, 2026-10-10)
-lists `jdx/mise 2026.10.3` under `github-actions` with no update, and the same pin
-under `regex` with `Updates: 2026.10.5`. A local `renovate-check --dry-run` on
-44.149.1 didn't extract the input at all: 2 deps in `checks.yml`, the two actions.
-Its output isn't proof of what the hosted app sees. A `custom.regex` manager anchored
-on the `# renovate: datasource=github-releases depName=jdx/mise` comment above the pin
-is what tracks the version, on `renovate/jdx-mise-2026.x`.
+`jdx/mise-action` installs one exact mise version in CI
+([`ci.md`](ci.md) § Pinning mise). Renovate also shells out to mise when its native
+manager refreshes `mise.lock`: its
+[`updateArtifacts()`](https://github.com/renovatebot/renovate/blob/main/lib/modules/manager/mise/artifacts.ts)
+resolves `constraints.mise` and runs the resulting binary. The top-level constraint
+therefore matches all four action pins. Without it, Renovate and CI can serialize
+the same lock differently.
 
-Renovate's bump changes only `version:`, not `mise.lock`. If the new mise writes the
-lock differently, CI's `mise run mise-lock --check` fails, the PR doesn't auto-merge,
-and someone relocks on that branch with the new mise (`ci.md` § Pinning mise). That
-commit makes the branch "modified", so Renovate stops rebasing it and never
-auto-merges it (`prAutomergeBlockReason: "BranchModified"`,
-`lib/workers/repository/update/pr/automerge.ts`). Merge it by hand once CI passes.
-#17 went this way on 2026-10-10.
+That mismatch broke #58 and #59: Renovate added
+`repository_ids = { repository = "677629099" }` to `usage`, while CI's pinned mise
+removed it. [starlit-os/krytis#1426](https://github.com/starlit-os/krytis/pull/1426)
+had the same byte-for-byte failure on 2026-10-25. Pinning Renovate's lock writer,
+rather than repeatedly repairing its PRs, is the reusable fix.
+
+The hosted app's `github-actions` manager extracts a `jdx/mise-action` version input
+and then drops the update under `pinDigests` (§ Silent drops under `pinDigests`).
+One custom regex manager therefore tracks five copies of the same `jdx/mise`
+dependency: `constraints.mise` plus the four action inputs. A single
+`renovate/jdx-mise-2026.x` PR moves them together. `mise run renovate-check
+--dry-run --log-level debug` reports five `custom.regex` dependencies.
+
+A mise-version PR can still fail if the new binary writes lock metadata differently
+from the old one: CI already runs the new pin, but the PR changes no tool and thus no
+lock. Relock that branch with the new mise (`ci.md` § Pinning mise). A human commit
+makes the branch "modified", so Renovate stops rebasing and auto-merging it
+(`prAutomergeBlockReason: "BranchModified"`); merge it by hand once CI passes. #17
+went this way on 2026-10-10.
 
 ## The `rust` pin is held
 

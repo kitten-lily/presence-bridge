@@ -10,6 +10,13 @@
   "pinDigests": true,
   // Commits are made through the GitHub API, which signs them (verified).
   "platformCommit": "enabled",
+  // Renovate's mise manager delegates lock refreshes to this exact binary.
+  // It must match every jdx/mise-action pin, or bot-generated mise.lock
+  // metadata can differ from CI. The custom manager below updates all five.
+  "constraints": {
+    // renovate: datasource=github-releases depName=jdx/mise
+    "mise": "2026.10.18",
+  },
   // Renovate only bumps direct deps. Transitive crates in Cargo.lock
   // (rustls and the rest) move only through lock file maintenance, which runs
   // `cargo update` for Cargo.lock and `mise lock --bump` for mise.lock, on
@@ -21,20 +28,24 @@
   "osvVulnerabilityAlerts": true,
   "customManagers": [
     {
-      // The mise version CI installs. The hosted app's github-actions manager
-      // extracts this input and then drops the update under pinDigests, as in
-      // krytis (Dependency Dashboard #18):
-      // docs/skills/renovate.md § Silent drops under pinDigests.
-      // The comment above the pin anchors the match.
+      // Keep Renovate's mise lock writer and all four CI installs on one
+      // version. The hosted app's github-actions manager extracts the action
+      // input and then drops it under pinDigests, as in krytis (Dependency
+      // Dashboard #18): docs/skills/renovate.md § Silent drops under
+      // pinDigests. The annotations anchor both forms.
       "customType": "regex",
-      "description": "mise version pinned on jdx/mise-action steps",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "description": "mise version used by Renovate lock writes and jdx/mise-action steps",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/",
+        "/^\\.github/renovate\\.json5$/",
+      ],
       "matchStrings": [
         "# renovate: datasource=github-releases depName=jdx/mise\\s+version: (?<currentValue>[0-9][^\\s]*)",
+        "// renovate: datasource=github-releases depName=jdx/mise\\s+\"mise\": \"(?<currentValue>[0-9][^\"]*)\"",
       ],
       "depNameTemplate": "jdx/mise",
       "datasourceTemplate": "github-releases",
-      // Releases are tagged v2026.10.3; the pin holds the bare version.
+      // Releases are tagged v2026.10.18; the pins hold the bare version.
       "extractVersionTemplate": "^v(?<version>.+)$",
     },
   ],

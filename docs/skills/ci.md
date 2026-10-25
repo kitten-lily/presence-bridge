@@ -59,27 +59,25 @@ PR. A new PR does, so #27 was closed and the release PR opened again as #28
 Without one, the action keeps whatever mise the runner has, or takes the newest, so
 the version drifts unseen
 ([krytis § Pin the mise version, not just the action](https://github.com/starlit-os/krytis/blob/main/docs/skills/ci-runner.md#pin-the-mise-version-not-just-the-action)).
-Lock contents depend on which mise wrote them ([`mise.md`](mise.md) § `mise.lock`),
-so bump `version:` and relock with that same mise in one PR. Renovate's bump does
-only the first half ([`renovate.md`](renovate.md) § The CI mise version).
+Lock contents depend on which mise wrote them ([`mise.md`](mise.md) § `mise.lock`).
 
-Every `jdx/mise-action` step carries the pin and its `# renovate:` comment: four
-steps across `checks.yml`, `release.yml`, and `release-binaries.yml`. The original
-dry-run on 2026-10-11 extracted all three then present
-(`"regex": {"fileCount": 2, "depCount": 3}`); the binary workflow adds the fourth.
-An update for one dependency lands on one branch, so they move together. A step
-without the comment keeps its old mise.
+Renovate's own lock writer is pinned to that version with `constraints.mise`
+([`renovate.md`](renovate.md) § The CI and lock-writer mise version). The same custom
+manager tracks the constraint and all four action inputs across `checks.yml`,
+`release.yml`, and `release-binaries.yml`, so its `jdx/mise` PR moves all five
+together. A step or constraint without the annotation silently stays behind.
 
-*(here)* Different mise writers have broken Renovate PRs in both directions:
+*(here)* Before the constraint existed, different mise writers broke Renovate PRs
+in both directions:
 
 - #17 (2026.10.3 → 2026.10.5) changed the CI pin but not the lock; the new mise
   dropped `usage`'s `repository_ids = { repository = "677629099" }` line.
-- #58 (`usage` 7.1.0 → 7.1.1) changed the tool and lock together, but Renovate's
-  generated lock added that line while CI's unchanged mise 2026.10.17 removed it.
+- #58 and #59 changed `usage` and its lock together; Renovate added that line,
+  while CI's pinned mise 2026.10.17 and 2026.10.18 respectively removed it.
 
-A direct tool update can therefore need a human relock even when Renovate changed
-both files. Run `mise run mise-lock` with the exact version pinned in the workflows.
-If the local version differs, download the pinned release
+The constraint prevents the second case. The first remains possible on a mise bump:
+run `mise run mise-lock` with the new version pinned in the PR. If the local version
+differs, download the pinned release
 (`gh release download v<version> -R jdx/mise -p
 'mise-v<version>-linux-x64.tar.gz'`) and run it by path in a clean environment:
 `env -i HOME=$HOME PATH=<dir>/mise/bin:/usr/bin:/bin <dir>/mise/bin/mise run mise-lock`.

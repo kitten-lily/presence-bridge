@@ -75,7 +75,8 @@ corrected where mise 2026.10.3 behaves differently.
   serves `packslip:github.com/jdx/usage`. Every later command printed
   `usage is locked to aqua:jdx/usage, but the registry now installs it from packslip:…`.
   `mise backends switch usage` moves the entry and reinstalls; the lock then gains
-  `signer` and `repository_ids`, matching krytis's.
+  the packslip `signer`. Whether it also records `repository_ids` depends on the mise
+  binary writing the lock ([`ci.md`](ci.md) § Pinning mise).
 - **`mise lock --platform linux-x64` doesn't prune other platforms** *(here)*. Entries
   already in the file for other platforms stay. To drop them, delete the file and relock.
 - **Any mise command that resolves tools can rewrite it in passing**, so the working
@@ -83,10 +84,11 @@ corrected where mise 2026.10.3 behaves differently.
   **`HEAD`**, not the index: `git diff -- mise.lock` alone passes once a stale lock's
   refresh is merely staged. It also fails when `HEAD` has no `mise.lock` at all.
   Greptile caught the index version on #9, and krytis's task has the same gap.
-- **The recorded checksum and URL depend on which mise binary wrote the lock**, not
-  only on the pinned version: mise releases have switched build variants (`musl` ↔
-  `gnu`) for the same tool version. If `--check` fails in CI but passes locally, update
-  the local mise first.
+- **Lock metadata depends on which mise binary wrote it**, not only on the pinned
+  tool version. Releases have switched build variants (`musl` ↔ `gnu`) for the same
+  version, and disagree on whether packslip entries carry `repository_ids`. If
+  `--check` fails in CI but passes locally, use the exact mise version pinned in CI
+  ([`ci.md`](ci.md) § Pinning mise).
 - **Lockfile revisions.** This file started at `lockfile_version = 3`, the current one
   as of 2026-10-09. An older revision makes mise warn on every command until
   `mise lock --upgrade --platform linux-x64` migrates it, which krytis had to do.
