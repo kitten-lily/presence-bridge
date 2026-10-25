@@ -4,11 +4,6 @@
 
 set -euo pipefail
 
-if [[ $# -gt 0 ]]; then
-    echo "release-assets accepts only its declared options (got: $*)" >&2
-    exit 2
-fi
-
 package_id="$(cargo pkgid --locked)"
 version="${package_id##*@}"
 tag="${usage_tag:-v${version}}"
