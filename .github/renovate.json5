@@ -44,7 +44,7 @@
       "automerge": true,
       "automergeType": "pr",
       // The repo's only enabled merge method (docs/skills/workflow.md § Merging).
-      "automergeStrategy": "merge",
+      "automergeStrategy": "merge-commit",
     },
     {
       // Lock file maintenance waits for a human. It moves every transitive
