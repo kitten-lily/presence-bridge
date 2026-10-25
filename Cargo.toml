@@ -1,6 +1,6 @@
 [package]
 name = "presence-bridge"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2024"
 # The Rust krytis builds this with (freedesktop-sdk 26.08.2), pinned in mise.toml.
 rust-version = "1.98"
