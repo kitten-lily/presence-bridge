@@ -183,10 +183,20 @@ showed "Playing Guildrun". Valheim's native build showed as "Playing Valheim".
 
 Releases are `v<version>` tags with a GitHub Release, and `CHANGELOG.md` lists what
 each one changed. [release-plz](https://release-plz.dev) keeps a release PR open with
-the next version and changelog; merging it tags the release. Nothing is published to
-crates.io and no binary is attached: krytis builds each tag from source.
-`mise run release-preview` shows what the next release would be.
-[`docs/skills/release.md`](docs/skills/release.md) covers the details.
+the next version and changelog; merging it builds and attaches a static Linux x64
+binary plus its SHA-256 checksum, then publishes the release. Nothing is published to
+crates.io. Install or select the latest release through mise's GitHub backend:
+
+```bash
+mise use -g github:kitten-lily/presence-bridge
+presence-bridge service install
+```
+
+The user service records the selected version's absolute binary path. Run
+`presence-bridge service install` again after `mise upgrade` so it follows the new
+version. `mise run release-preview` shows what the next release would be.
+[`docs/skills/release.md`](docs/skills/release.md) covers the artifact and release
+details.
 
 ## License
 

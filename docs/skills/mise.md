@@ -43,6 +43,20 @@ for it ([`renovate.md`](renovate.md) § The `rust` pin is held).
   its version, specifiers and components, but **no checksum and no URL**: the lockfile
   does not pin the toolchain's bytes.
 
+## Release asset builder
+
+`mise run release-assets` does not use the host Rust installation. The Rust musl
+target alone is insufficient for this crate: `ring` also needs a musl C compiler, and
+the first host build failed looking for `x86_64-linux-musl-gcc`. The task instead
+builds natively in an exact-digest official Rust Alpine amd64 image. Keep that image's
+Rust version aligned with the pin above.
+
+The task prefers podman and falls back to Docker for GitHub's runner. Rootless podman
+must use `--userns=keep-id`; `--user $(id -u):$(id -g)` maps that container identity
+to a subordinate host ID and cannot write the bind-mounted `target/` directory.
+Docker uses the explicit UID/GID instead. The output is always Linux x64, independent
+of the host architecture.
+
 ## `mise.lock`
 
 Ported from [krytis § `mise.lock`](https://github.com/starlit-os/krytis/blob/main/docs/skills/mise.md#miselock),

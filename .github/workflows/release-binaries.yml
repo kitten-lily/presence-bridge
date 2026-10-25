@@ -1,0 +1,32 @@
+name: Release binaries
+
+# release-plz creates a draft GitHub Release and its v<version> tag. The App-made
+# tag triggers this workflow; publishing happens only after both assets upload.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  linux-x64:
+    name: Linux x64
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          # renovate: datasource=github-releases depName=jdx/mise
+          version: 2026.10.17
+
+      - name: Build static binary archive
+        run: mise run release-assets --tag "$GITHUB_REF_NAME"
+
+      - name: Upload assets and publish release
+        run: mise run release-publish --tag "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}

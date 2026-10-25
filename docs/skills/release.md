@@ -9,7 +9,8 @@ A release is a `v<version>` tag whose tree builds. krytis's element tracks those
 with a `track: v*` glob and builds from source
 ([krytis § Packaging](https://github.com/starlit-os/krytis/pull/1152), in its
 presence-bridge design on an open PR as of 2026-10-11), so every tag becomes a krytis
-update. No binary is attached.
+update. Each release also carries a static Linux x64 binary archive and SHA-256
+checksum for mise's `github:` backend and other non-krytis systems.
 
 ## Why release-plz
 
@@ -32,11 +33,20 @@ action.
    through GitHub's "PRs associated with a commit" API. *(here)* That works on this
    repo's merge commits: on `ee8a17d` it found `[21]` and logged `skipping release:
    current commit is not from a release PR`. Otherwise it creates the `v<version>` tag
-   through the API and a GitHub Release whose body is that version's changelog.
+   through the API and a **draft** GitHub Release whose body is that version's
+   changelog. `git_release_draft = true` is required: immutable releases cannot accept
+   an asset after publication.
 2. **`release-pr`** (`mise run release-pr`), `needs: release`, so a release PR's merge
    is tagged before the next version is worked out from the tags. It opens or updates
    the release PR, labelled `release`, on a `release-plz-*` branch. Don't change
    `pr_branch_prefix`: the prefix is how `release` recognises the PR.
+
+The App-created tag triggers `release-binaries.yml`. `mise run release-assets` builds
+the static binary, then `mise run release-publish` waits for release-plz's draft,
+uploads the archive and checksum, and publishes it. Tag creation can reach the second
+workflow before release-plz has created the draft, hence the bounded wait. A build or
+upload failure leaves a mutable draft rather than publishing an immutable incomplete
+release.
 
 A release PR stays open while other PRs merge, and is regenerated on each push to
 `main`. Nothing is tagged until a human merges it.
@@ -59,10 +69,13 @@ release, whose version is already tagged, is that race, and shouldn't be merged.
    (`README.md` § Testing) on the PR's head and tick both boxes in its body: the tag
    goes straight into the krytis image.
 3. Merge it with a merge commit (`workflow.md` § Merging).
-4. The `Release` run on `main` tags it. Check with
-   `git ls-remote --tags origin 'v*'`, `gh release view v<version>`, and
+4. The `Release` run on `main` tags it, then `Release binaries` publishes it. Check
+   with `git ls-remote --tags origin 'v*'`, `gh release view v<version>`, and
    `gh release verify v<version>`, which checks GitHub's attestation of the tag and
-   its commit.
+   its commit. The release must list both
+   `presence-bridge-v<version>-linux-x64.tar.gz` and its `.sha256` file.
+5. On a non-krytis Linux x64 machine, `mise use github:kitten-lily/presence-bridge`
+   must select the release and `presence-bridge --version` must print that version.
 
 *(here)* **The tag is on the release PR's head commit, not on the merge commit.**
 `v0.1.0` (#23) points at `4ab72ad` (`chore: release v0.1.0`). The merge is `66e504d`.
@@ -80,6 +93,27 @@ releases from v0.2.0 on; v0.1.0 was published before it was enabled.
 
 To skip a release, leave the PR open; later merges update it. Closing it only lasts
 until the next push to `main`, which opens a new one.
+
+## Binary assets
+
+The archive is named `presence-bridge-v<version>-linux-x64.tar.gz` and contains one
+root-level executable named `presence-bridge`. That shape lets mise's GitHub backend
+select the OS/architecture asset and put the executable on `PATH` without a backend
+configuration file:
+
+```bash
+mise use -g github:kitten-lily/presence-bridge
+```
+
+`mise run release-assets --tag v<version>` reproduces the archive and checksum under
+`dist/`. It builds in the exact-digest `rust:1.98.1-alpine3.23` amd64 image rather than
+depending on a host musl compiler. The task prefers rootless podman locally and falls
+back to Docker on GitHub's runner. The binary is Linux-only: process detection uses
+Linux `/proc`, and `service install` writes a systemd user unit.
+
+The installed service's `ExecStart=` is the absolute path returned by
+`current_exe()`. mise selects binaries from a versioned install directory, so after
+`mise upgrade`, rerun `presence-bridge service install` before pruning the old version.
 
 ## Previewing a release
 

@@ -63,11 +63,12 @@ Lock contents depend on which mise wrote them ([`mise.md`](mise.md) § `mise.loc
 so bump `version:` and relock with that same mise in one PR. Renovate's bump does
 only the first half ([`renovate.md`](renovate.md) § The CI mise version).
 
-Every `jdx/mise-action` step carries the pin and its `# renovate:` comment: three
-steps across `checks.yml` and `release.yml`. *(here)* The dry-run on 2026-10-11
-extracted all three (`"regex": {"fileCount": 2, "depCount": 3}`), and an update for
-one dependency lands on one branch, so they move together. A step without the comment
-keeps its old mise.
+Every `jdx/mise-action` step carries the pin and its `# renovate:` comment: four
+steps across `checks.yml`, `release.yml`, and `release-binaries.yml`. The original
+dry-run on 2026-10-11 extracted all three then present
+(`"regex": {"fileCount": 2, "depCount": 3}`); the binary workflow adds the fourth.
+An update for one dependency lands on one branch, so they move together. A step
+without the comment keeps its old mise.
 
 *(here)* Renovate's first PR, #17 (2026.10.3 → 2026.10.5), failed
 `mise-lock --check`, because 2026.10.5 drops `usage`'s

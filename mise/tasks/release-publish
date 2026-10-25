@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+#MISE description="Upload release assets to a draft GitHub Release, then publish it"
+#USAGE flag "--tag <tag>" required=#true help="Release tag whose draft is published"
+
+set -euo pipefail
+
+if [[ $# -gt 0 ]]; then
+    echo "release-publish accepts only its declared options (got: $*)" >&2
+    exit 2
+fi
+
+: "${GH_TOKEN:=$(gh auth token 2>/dev/null || true)}"
+: "${GH_TOKEN:?release-publish needs GH_TOKEN, or a logged-in gh}"
+export GH_TOKEN
+
+readonly tag="$usage_tag"
+readonly asset="presence-bridge-${tag}-linux-x64.tar.gz"
+readonly output_dir="dist"
+readonly archive="$output_dir/$asset"
+readonly checksum="$archive.sha256"
+
+[[ -f "$archive" ]] || { echo "missing release archive: $archive" >&2; exit 1; }
+[[ -f "$checksum" ]] || { echo "missing release checksum: $checksum" >&2; exit 1; }
+(cd "$output_dir" && sha256sum --check "$asset.sha256")
+
+# release-plz creates the tag before its draft release. A tag-triggered workflow
+# can therefore start first; wait for that bounded API race rather than creating
+# a second release with a different body.
+release_state=""
+for _ in {1..60}; do
+    if release_state="$(gh release view "$tag" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+        break
+    fi
+    sleep 2
+done
+
+if [[ -z "$release_state" ]]; then
+    echo "GitHub Release $tag did not appear within 120 seconds" >&2
+    exit 1
+fi
+
+if [[ "$release_state" != "true" ]]; then
+    mapfile -t uploaded_assets < <(
+        gh release view "$tag" --json assets --jq '.assets[].name'
+    )
+    missing=0
+    for name in "$asset" "$asset.sha256"; do
+        found=false
+        for uploaded in "${uploaded_assets[@]}"; do
+            if [[ "$uploaded" == "$name" ]]; then
+                found=true
+                break
+            fi
+        done
+        if [[ "$found" != "true" ]]; then
+            echo "published release $tag is missing immutable asset $name" >&2
+            missing=1
+        fi
+    done
+    [[ "$missing" == 0 ]] || exit 1
+    echo "release $tag is already published with both assets"
+    exit 0
+fi
+
+gh release upload "$tag" "$archive" "$checksum" --clobber
+gh release edit "$tag" --draft=false --latest
