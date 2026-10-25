@@ -1,8 +1,8 @@
 name: Release
 
-# release-plz keeps a release PR open with the next version and changelog, and
-# tags v<version> plus a GitHub Release when that PR merges. krytis tracks the
-# tags. docs/skills/release.md.
+# release-plz keeps a release PR open with the next version and changelog. Its
+# merge creates the v<version> tag and a draft GitHub Release; the tag workflow
+# attaches the binary and publishes it. krytis tracks the tags. docs/skills/release.md.
 
 on:
   push:

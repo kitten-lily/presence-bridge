@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#MISE description="Build the static Linux x64 release archive and checksum"
+#USAGE flag "--tag <tag>" help="Release tag used in the asset name (default: Cargo package version)"
+
+set -euo pipefail
+
+if [[ $# -gt 0 ]]; then
+    echo "release-assets accepts only its declared options (got: $*)" >&2
+    exit 2
+fi
+
+package_id="$(cargo pkgid --locked)"
+version="${package_id##*@}"
+tag="${usage_tag:-v${version}}"
+
+if [[ "$tag" != "v${version}" ]]; then
+    echo "release tag ${tag} does not match Cargo package version v${version}" >&2
+    exit 1
+fi
+
+readonly asset="presence-bridge-${tag}-linux-x64.tar.gz"
+readonly output_dir="dist"
+# Rust's Alpine image is a native musl build environment. Pin the amd64
+# manifest: the archive is Linux x64 regardless of the machine running this task.
+readonly builder_image="docker.io/library/rust:1.98.1-alpine3.23@sha256:654de2105a34d9b1fad1994ae55bc78c9fc21adb551b6b749181c52d4fe0a732"
+
+if command -v podman >/dev/null; then
+    runtime=podman
+    runtime_args=(--userns=keep-id)
+    volume="$PWD:/work:Z"
+elif command -v docker >/dev/null; then
+    runtime=docker
+    runtime_args=(--user "$(id -u):$(id -g)")
+    volume="$PWD:/work"
+else
+    echo "release-assets needs podman or docker" >&2
+    exit 1
+fi
+
+"$runtime" run --rm \
+    --platform linux/amd64 \
+    "${runtime_args[@]}" \
+    -e CARGO_HOME=/tmp/cargo \
+    -e CARGO_TARGET_DIR=/work/target/release-assets \
+    -e HOME=/tmp \
+    -v "$volume" \
+    -w /work \
+    "$builder_image" \
+    cargo build --release --locked
+
+staging="$(mktemp -d)"
+trap 'rm -rf "$staging"' EXIT
+install -m 0755 "target/release-assets/release/presence-bridge" "$staging/presence-bridge"
+
+mkdir -p "$output_dir"
+rm -f "$output_dir/$asset" "$output_dir/$asset.sha256"
+
+epoch="$(git log -1 --format=%ct)"
+tar \
+    --sort=name \
+    --owner=0 \
+    --group=0 \
+    --numeric-owner \
+    --mtime="@${epoch}" \
+    -C "$staging" \
+    -czf "$output_dir/$asset" \
+    presence-bridge
+(
+    cd "$output_dir"
+    sha256sum "$asset" > "$asset.sha256"
+)
+
+printf '%s\n%s\n' "$output_dir/$asset" "$output_dir/$asset.sha256"

@@ -1,12 +1,15 @@
 # release-plz: a release PR bumps Cargo.toml/Cargo.lock and CHANGELOG.md, and
-# merging it tags v<version> and creates the GitHub Release. krytis tracks the
-# tags. docs/skills/release.md explains each setting; preview the next release
-# with `mise run release-preview`.
+# merging it tags v<version> and creates a draft GitHub Release. The tag workflow
+# attaches the binary and checksum, then publishes it; krytis tracks the tag.
+# docs/skills/release.md explains each setting; preview with `mise run release-preview`.
 
 [workspace]
 # Versions come from v* tags, not crates.io, and `cargo publish` is skipped
 # (Cargo.toml's `publish = false` would refuse it anyway).
 git_only = true
+# Releases stay mutable until the tag workflow uploads its binary and checksum.
+# mise/tasks/release-publish then publishes them atomically under immutable releases.
+git_release_draft = true
 # Tag only when the merged commit belongs to a release-plz-* PR. Every other
 # merge to main, Renovate's included, only updates the open release PR.
 release_always = false
@@ -33,7 +36,8 @@ pr_body = """
 
 ## Before merging
 
-Merging tags this commit, and krytis builds the tag into its image.
+Merging tags this commit. krytis builds the tag into its image, and the tag workflow
+attaches a Linux x64 binary and checksum before publishing the GitHub Release.
 
 - [ ] Checks passed on this PR.
 - [ ] The live check (README.md § Testing) passed on this branch's head, `<sha>`.
@@ -49,7 +53,7 @@ commit_parsers = [
   # Fixes to CI and the tooling: the scope is a mise task, `ci`, `mise`,
   # `renovate` or `greptile`. They don't change the binary. Add a new task's
   # name here (docs/skills/release.md § The changelog).
-  { message = '^fix\((ci|build|dev|docs-links|lint|mise|mise-lock|release|release-pr|release-preview|renovate|renovate-check|test|toolchain-check|greptile)\)!?:', skip = true },
+  { message = '^fix\((ci|build|dev|docs-links|lint|mise|mise-lock|release|release-assets|release-pr|release-preview|release-publish|renovate|renovate-check|test|toolchain-check|greptile)\)!?:', skip = true },
   { message = '^feat', group = "Added" },
   { message = '^fix\(deps\)', group = "Dependencies" },
   { message = '^chore\(deps\): lock file maintenance', group = "Dependencies" },

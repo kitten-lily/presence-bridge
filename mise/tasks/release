@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Tag and publish the GitHub Release if HEAD is a merged release PR (run by .github/workflows/release.yml)"
+#MISE description="Tag and draft a GitHub Release if HEAD is a merged release PR (run by .github/workflows/release.yml)"
 #USAGE flag "--dry-run" help="Report what would be tagged and released, and create nothing"
 
 # release_always = false: on any commit that isn't from a release-plz-* PR this
