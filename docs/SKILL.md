@@ -19,6 +19,8 @@ Load only the file for your current task. Writing a lesson back:
 | Debug a task that sees flags it wasn't given, or loses an env var | [`docs/skills/mise.md`](skills/mise.md) § Inherited `usage_*`, in both directions |
 | Change `.github/renovate.json5`, or check what Renovate would open and auto-merge | [`docs/skills/renovate.md`](skills/renovate.md) § Checking the config |
 | Find out why a Renovate PR didn't open or didn't auto-merge | [`docs/skills/renovate.md`](skills/renovate.md) § Auto-merge needs at least one check, § Silent drops under `pinDigests` |
+| Change `presence-bridge service install` / `uninstall`, or the unit it writes | [`docs/skills/service.md`](skills/service.md) § Telling a packaged unit from none, § `ExecStart=` quoting |
+| Test the service commands against a real systemd user manager | [`docs/skills/service.md`](skills/service.md) § Testing against a real user manager |
 | Cut or skip a release, or preview the next version and changelog | [`docs/skills/release.md`](skills/release.md) § Cutting a release, § Previewing a release |
 | Find out why a release PR did or didn't open, or change `release-plz.toml` | [`docs/skills/release.md`](skills/release.md) § What opens a release PR |
 | Change `.github/workflows/`, or fix a check that fails only in CI | [`docs/skills/ci.md`](skills/ci.md) |
