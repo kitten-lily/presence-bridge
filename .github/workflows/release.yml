@@ -44,7 +44,7 @@ jobs:
         with:
           # The mise that last wrote mise.lock (docs/skills/ci.md § Pinning mise).
           # renovate: datasource=github-releases depName=jdx/mise
-          version: 2026.10.18
+          version: 2026.10.24
 
       - name: Tag and release a merged release PR
         run: mise run release
@@ -81,7 +81,7 @@ jobs:
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           # renovate: datasource=github-releases depName=jdx/mise
-          version: 2026.10.18
+          version: 2026.10.24
 
       - name: Open or update the release PR
         run: mise run release-pr
