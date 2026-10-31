@@ -15,7 +15,7 @@
   // metadata can differ from CI. The custom manager below updates all five.
   "constraints": {
     // renovate: datasource=github-releases depName=jdx/mise
-    "mise": "2026.10.18",
+    "mise": "2026.10.24",
   },
   // Renovate only bumps direct deps. Transitive crates in Cargo.lock
   // (rustls and the rest) move only through lock file maintenance, which runs
