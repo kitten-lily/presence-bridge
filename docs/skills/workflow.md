@@ -104,10 +104,12 @@ badges.
 ### Renovate and release PRs get no review
 
 `.greptile/config.json` sets `excludeAuthors: ["renovate[bot]",
-"presence-bridge-release[bot]"]`, the second being the App that opens release PRs
-([`release.md`](release.md) § The token). Greptile reviews every new PR by default,
-and a dependency bump or a version-and-changelog PR gives it little to review. Two
-things about the file:
+"kitten-lily-release[bot]"]`, the second being the App that opens release PRs
+([`release.md`](release.md) § The token). The App was `presence-bridge-release`
+until 2026-11-03, and the exclusion matches the bot's login, so a rename of the App
+needs this file and the dashboard rule updated with it. Greptile reviews every new
+PR by default, and a dependency bump or a version-and-changelog PR gives it little
+to review. Two things about the file:
 
 - **Greptile reads it from the PR's source branch**
   ([greptile.json reference](https://www.greptile.com/docs/code-review/greptile-json-reference)),
