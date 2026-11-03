@@ -190,11 +190,17 @@ job mints a token from a **GitHub App** with `actions/create-github-app-token`, 
 per job (`permission-contents`, `permission-pull-requests`), and valid for an hour. The
 workflow's own `GITHUB_TOKEN` stays `contents: read`. The PR's author is the App's bot.
 
-The App, created by the maintainer: no webhook, repository permissions **Contents**
-and **Pull requests** read & write, installed only on this repo. Its client ID is the
-repo variable `RELEASE_APP_CLIENT_ID`, its private key the secret
-`RELEASE_APP_PRIVATE_KEY`. Greptile's rule that skips `renovate[bot]` also excludes
-the App's bot ([`workflow.md`](workflow.md) § Review: Greptile).
+The App, created by the maintainer: `kitten-lily-release`, named
+`presence-bridge-release` until 2026-11-03, when it was renamed to serve
+krytis-prompter too. A rename changes the bot's login, not the client ID or the
+integration ID the "Release tags" ruleset names. No webhook, repository permissions
+**Contents** and **Pull requests** read & write, installed only on the kitten-lily
+repos that release with it. Its client ID is the repo variable
+`RELEASE_APP_CLIENT_ID`, its private key the secret `RELEASE_APP_PRIVATE_KEY`.
+Actions secrets are write-only, so keep the `.pem` in the maintainer's password
+manager; a repo whose key exists nowhere else needs a new key from the App's
+settings. Greptile's rule that skips `renovate[bot]` also excludes the App's bot
+([`workflow.md`](workflow.md) § Review: Greptile).
 
 Repository setting "Allow GitHub Actions to create and approve pull requests" stays
 off: the App token doesn't need it.
@@ -206,8 +212,9 @@ with the App's key, so the client ID and key were not the problem. Once the App 
 installed on the repo, `gh run rerun <id>` passed and opened #23. A private App can't
 be checked from outside: `gh api apps/<slug>` returns 404 for it too.
 
-*(here)* The first release PR, #23, was authored by `presence-bridge-release[bot]`, and
-its commit is `verified: true`. Checks ran on it, and Greptile didn't review it.
+*(here)* The first release PR, #23, was authored by `presence-bridge-release[bot]` (the
+App's name then), and its commit is `verified: true`. Checks ran on it, and Greptile
+didn't review it.
 
 ## Tags are unsigned
 
